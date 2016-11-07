@@ -19,7 +19,7 @@ set(CMAKE_SHARED_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-scri
 set(CMAKE_EXE_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/Include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${DARLING_TOP_DIRECTORY}/src/libc/include/FreeBSD)
 include_directories(${DARLING_TOP_DIRECTORY}/src/libc/include/NetBSD)
 include_directories(${DARLING_TOP_DIRECTORY}/src/libinfo)
@@ -34,16 +34,13 @@ include_directories(${DARLING_TOP_DIRECTORY}/src/external/expat/expat/lib)
 include_directories(${DARLING_TOP_DIRECTORY}/src/ncurses/include)
 include_directories(${DARLING_TOP_DIRECTORY}/src/ncurses/panel)
 include_directories(${DARLING_TOP_DIRECTORY}/src/libedit/src)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/Modules/_ctypes/libffi_osx/include)
 include_directories(${DARLING_TOP_DIRECTORY}/src/external/openssl/src/include)
 include_directories(${DARLING_TOP_DIRECTORY}/src/external/corefoundation/Headers)
 include_directories(${CMAKE_BINARY_DIR}/src/external/corefoundation/Headers)
 include_directories(${DARLING_TOP_DIRECTORY}/src/external/foundation/Headers)
 include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
-include_directories(${DARLING_TOP_DIRECTORY}/src/external/sqlite)
 
 set(ruby_sources
-	addr2line.c
 	array.c
 	bignum.c
 	class.c
@@ -59,14 +56,76 @@ set(ruby_sources
 	dmyencoding.c
 	dmyext.c
 	dmyversion.c
+	encoding.c
+	enum.c
+	enumerator.c
+	error.c
+	eval.c
+	eval_error.c
+	eval_jump.c
+	file.c
+	goruby.c
+	hash.c
+	id.c
+	inits.c
+	io.c
+	iseq.c
+	lex.c
+	load.c
+	marshal.c
+	math.c
+	miniprelude.c
+	newline.c
+	node.c
+	numeric.c
+	object.c
+	pack.c
+	parse.c
+	proc.c
+	process.c
+	random.c
+	range.c
+	rational.c
+	re.c
+	regcomp.c
+	regenc.c
+	regerror.c
+	regexec.c
+	regparse.c
+	regsyntax.c
+	ruby.c
+	safe.c
+	signal.c
+	siphash.c
+	sparc.c
+	sprintf.c
+	st.c
+	strftime.c
+	string.c
+	struct.c
+	thread.c
+	thread_pthread.c
+	thread_win32.c
+	time.c
+	transcode.c
+	util.c
+	variable.c
+	version.c
+	vm.c
+	vm_backtrace.c
+	vm_dump.c
+	vm_eval.c
+	vm_exec.c
+	vm_insnhelper.c
+	vm_method.c
+	vm_trace.c
+	vsnprintf.c
 
 	enc/ascii.c
 	enc/big5.c
 	enc/cp949.c
 	enc/emacs_mule.c
 	enc/encdb.c
-	enc/encinit.c
-	enc/encinit.c.erb
 	enc/euc_jp.c
 	enc/euc_kr.c
 	enc/euc_tw.c
@@ -91,7 +150,25 @@ set(ruby_sources
 	enc/koi8_r.c
 	enc/koi8_u.c
 	enc/mktable.c
-	enc/prelude.rb
 	enc/shift_jis.c
 
 )
+
+SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling")
+SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+add_library(ruby SHARED ${ruby_sources})
+target_link_libraries(ruby system)
+install(TARGETS ruby DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
+
+if (NOT DARLING_NO_EXECUTABLES)
+	include(darling_exe)
+	include(InstallSymlink)
+
+	add_darling_executable(rubyexe main.c)
+	target_link_libraries(rubyexe ruby)
+	set_target_properties(rubyexe PROPERTIES OUTPUT_NAME ruby)
+
+	install(TARGETS rubyexe DESTINATION libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/bin)
+endif(NOT DARLING_NO_EXECUTABLES)
