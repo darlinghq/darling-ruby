@@ -18,6 +18,7 @@
 #include "internal.h"
 #include "probes.h"
 #include "id.h"
+#include "probes.dmyh"
 
 #ifndef ARRAY_DEBUG
 # define NDEBUG

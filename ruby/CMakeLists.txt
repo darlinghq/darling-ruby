@@ -14,7 +14,7 @@ add_definitions(-DNDEBUG -DHAVE_NDBM_H -DHAVE_SEM_OPEN -DOBJC2RUNTIME)
 add_definitions(-DVERSION="2.0" -DPREFIX="/System/Library/Frameworks/Ruby.framework/Versions/2.0" -DSUFFIX="${BITS}")
 add_definitions(-DPLATFORM="darwin")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -fwrapv -fPIC -ggdb -O0")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -fwrapv -fPIC -ggdb -O0 -DFALSE=0 -DTRUE=1")
 set(CMAKE_SHARED_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
 set(CMAKE_EXE_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
 
@@ -39,6 +39,7 @@ include_directories(${DARLING_TOP_DIRECTORY}/src/external/corefoundation/Headers
 include_directories(${CMAKE_BINARY_DIR}/src/external/corefoundation/Headers)
 include_directories(${DARLING_TOP_DIRECTORY}/src/external/foundation/Headers)
 include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
+include_directories(${DARLING_TOP_DIRECTORY}/platform-include/pthread)
 
 set(ruby_sources
 	array.c
@@ -157,6 +158,13 @@ set(ruby_sources
 SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling")
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+# probes.h needs to be generated
+add_custom_command(
+	OUTPUT ${CMAKE_SOURCE_DIR}/probes.h
+	WORKING_DIR ${CMAKE_SOURCE_DIR}
+	COMMAND dtrace -s probes.d -h
+)
 
 add_library(ruby SHARED ${ruby_sources})
 target_link_libraries(ruby system)
