@@ -1,5 +1,8 @@
 #ifndef INCLUDE_RUBY_CONFIG_H
 #define INCLUDE_RUBY_CONFIG_H 1
+
+#define RUBY_EXPORT 1
+
 /* confdefs.h */
 #define CANONICALIZATION_FOR_MATHN 1
 #define STDC_HEADERS 1
@@ -116,7 +119,8 @@
 #define HAVE_STRUCT_TIMEVAL 1
 #define HAVE_STRUCT_TIMESPEC 1
 #define HAVE_STRUCT_TIMEZONE 1
-#define HAVE_CLOCKID_T 1
+// Apparently we don't
+//#define HAVE_CLOCKID_T 1
 #define HAVE_RB_FD_INIT 1
 #define HAVE_INT8_T 1
 #define SIZEOF_INT8_T 1
@@ -285,3 +289,7 @@
 #define HAVE_PTHREAD_H 1
 #define RUBY_EXEC_PREFIX "/usr/local"
 #endif /* INCLUDE_RUBY_CONFIG_H */
+
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
