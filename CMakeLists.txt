@@ -16,37 +16,36 @@ add_definitions(-DPLATFORM="darwin")
 
 add_definitions(-DFALSE=0 -DTRUE=1)
 
-add_definitions(-D_XOPEN_SOURCE -D_DARWIN_C_SOURCE -D_DARWIN_UNLIMITED_SELECT -D_REENTRANT)
+add_definitions(-D _XOPEN_SOURCE -D _DARWIN_C_SOURCE -D _DARWIN_UNLIMITED_SELECT -D _REENTRANT -D RUBY_EXPORT)
 set(RUBY_WARN_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-parentheses -Wno-macro-redefined -Wno-comment -Wno-shift-negative-value -Wno-long-long -Wno-missing-field-initializers -Wno-unused-function -Wno-implicit-function-declaration")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${RUBY_WARN_FLAGS} -nostdinc -fwrapv -fPIC -ggdb -include ruby/config.h -include ruby/missing.h -include ruby/defines.h")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${RUBY_WARN_FLAGS} -nostdinc -fwrapv -fPIC -ggdb -include ruby/config.h -include ruby/missing.h -include ruby/defines.h -include ruby/ruby.h")
 set(CMAKE_SHARED_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
 set(CMAKE_EXE_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/libc/include/FreeBSD)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/libc/include/NetBSD)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/libinfo)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/libc/gen)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/libc/darwin)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/libc/stdtime/FreeBSD)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/launchd/liblaunch)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/external/libdispatch)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/external/zlib)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/external/bzip2)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/external/expat/expat/lib)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/ncurses/include)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/ncurses/panel)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/libedit/src)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/external/openssl/src/include)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/external/corefoundation/Headers)
-#include_directories(${CMAKE_BINARY_DIR}/src/external/corefoundation/Headers)
-#include_directories(${DARLING_TOP_DIRECTORY}/src/external/foundation/Headers)
-#include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
+include_directories(${DARLING_TOP_DIRECTORY}/src/libc/include/FreeBSD)
+include_directories(${DARLING_TOP_DIRECTORY}/src/libc/include/NetBSD)
+include_directories(${DARLING_TOP_DIRECTORY}/src/libinfo)
+include_directories(${DARLING_TOP_DIRECTORY}/src/libc/gen)
+include_directories(${DARLING_TOP_DIRECTORY}/src/libc/darwin)
+include_directories(${DARLING_TOP_DIRECTORY}/src/libc/stdtime/FreeBSD)
+include_directories(${DARLING_TOP_DIRECTORY}/src/launchd/liblaunch)
+include_directories(${DARLING_TOP_DIRECTORY}/src/external/libdispatch)
+include_directories(${DARLING_TOP_DIRECTORY}/src/external/zlib)
+include_directories(${DARLING_TOP_DIRECTORY}/src/external/bzip2)
+include_directories(${DARLING_TOP_DIRECTORY}/src/external/expat/expat/lib)
+include_directories(${DARLING_TOP_DIRECTORY}/src/ncurses/include)
+include_directories(${DARLING_TOP_DIRECTORY}/src/ncurses/panel)
+include_directories(${DARLING_TOP_DIRECTORY}/src/libedit/src)
+include_directories(${DARLING_TOP_DIRECTORY}/src/external/openssl/src/include)
+include_directories(${DARLING_TOP_DIRECTORY}/src/external/corefoundation/Headers)
+include_directories(${CMAKE_BINARY_DIR}/src/external/corefoundation/Headers)
+include_directories(${DARLING_TOP_DIRECTORY}/src/external/foundation/Headers)
+include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
 include_directories(${DARLING_TOP_DIRECTORY}/platform-include/pthread)
 
-set(ruby_sources
-	main.c
+set(ruby_lib_sources
 	dmydln.c
 	dmyencoding.c
 	miniprelude.c
@@ -79,6 +78,7 @@ set(ruby_sources
 	random.c
 	range.c
 	rational.c
+	re.c
 	regcomp.c
 	regenc.c
 	regerror.c
@@ -117,7 +117,6 @@ set(ruby_sources
 	id.c
 	lex.c
 	newline.c
-	re.c
 	siphash.c
 	sparc.c
 	thread_pthread.c
@@ -166,16 +165,16 @@ SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-add_library(libruby SHARED ${ruby_sources})
-target_link_libraries(libruby system)
-install(TARGETS libruby DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
+#add_library(libruby SHARED ${ruby_sources})
+#target_link_libraries(libruby system)
+#install(TARGETS libruby DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
 
 if (NOT DARLING_NO_EXECUTABLES)
 	include(darling_exe)
 	include(InstallSymlink)
 
 	add_darling_executable(ruby main.c)
-	target_link_libraries(ruby libruby)
+	#target_link_libraries(ruby libruby)
 
 	install(TARGETS ruby DESTINATION libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/bin)
 endif(NOT DARLING_NO_EXECUTABLES)
