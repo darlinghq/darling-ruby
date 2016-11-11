@@ -17,8 +17,8 @@ add_definitions(-DPLATFORM="darwin")
 add_definitions(-DFALSE=0 -DTRUE=1)
 
 add_definitions(-D_XOPEN_SOURCE -D_DARWIN_C_SOURCE -D_DARWIN_UNLIMITED_SELECT -D_REENTRANT)
-set(RUBY_WARN_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-parentheses -Wno-comment -Wno-shift-negative-value -Wno-long-long -Wno-missing-field-initializers")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${RUBY_WARN_FLAGS} -nostdinc -fwrapv -fPIC -ggdb -include ruby/config.h -include ruby/missing.h -include ruby/defines.h -include ruby/intern.h -include ruby/st.h -include ruby/subst.h -include internal.h -include ruby/encoding.h")
+set(RUBY_WARN_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-parentheses -Wno-macro-redefined -Wno-comment -Wno-shift-negative-value -Wno-long-long -Wno-missing-field-initializers -Wno-unused-function -Wno-implicit-function-declaration")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${RUBY_WARN_FLAGS} -nostdinc -fwrapv -fPIC -ggdb -include ruby/config.h -include ruby/missing.h -include ruby/defines.h")
 set(CMAKE_SHARED_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
 set(CMAKE_EXE_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
 
@@ -47,52 +47,38 @@ include_directories(${DARLING_TOP_DIRECTORY}/platform-include/pthread)
 
 set(ruby_sources
 	main.c
+	dmydln.c
+	dmyencoding.c
+	miniprelude.c
 	array.c
 	bignum.c
 	class.c
 	compar.c
-	compile.c
 	complex.c
-	cont.c
-	debug.c
 	dir.c
-	dln.c
 	dln_find.c
-	dmydln.c
-	dmyencoding.c
-	dmyext.c
-	dmyversion.c
-	encoding.c
 	enum.c
 	enumerator.c
 	error.c
 	eval.c
-	eval_error.c
-	eval_jump.c
+	load.c
+	proc.c
 	file.c
-	goruby.c
+	gc.c
 	hash.c
-	id.c
 	inits.c
 	io.c
-	iseq.c
-	lex.c
-	load.c
 	marshal.c
 	math.c
-	miniprelude.c
-	newline.c
 	node.c
 	numeric.c
 	object.c
 	pack.c
 	parse.c
-	proc.c
 	process.c
 	random.c
 	range.c
 	rational.c
-	re.c
 	regcomp.c
 	regenc.c
 	regerror.c
@@ -102,29 +88,45 @@ set(ruby_sources
 	ruby.c
 	safe.c
 	signal.c
-	siphash.c
-	sparc.c
 	sprintf.c
 	st.c
 	strftime.c
 	string.c
 	struct.c
-	thread.c
-	thread_pthread.c
-	thread_win32.c
 	time.c
 	transcode.c
 	util.c
 	variable.c
-	version.c
+	compile.c
+	debug.c
+	iseq.c
 	vm.c
-	vm_backtrace.c
 	vm_dump.c
+	vm_backtrace.c
+	vm_trace.c
+	thread.c
+
+	cont.c
+	dln.c
+	dmyext.c
+	dmyversion.c
+	encoding.c
+	eval_error.c
+	eval_jump.c
+	goruby.c
+	id.c
+	lex.c
+	newline.c
+	re.c
+	siphash.c
+	sparc.c
+	thread_pthread.c
+	thread_win32.c
+	version.c
 	vm_eval.c
 	vm_exec.c
 	vm_insnhelper.c
 	vm_method.c
-	vm_trace.c
 	vsnprintf.c
 
 	enc/ascii.c
