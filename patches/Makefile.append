@@ -1,3 +1,0 @@
-
-print_arch_hdrdir:
-	@echo $(arch_hdrdir)
