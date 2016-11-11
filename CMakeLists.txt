@@ -45,7 +45,7 @@ include_directories(${DARLING_TOP_DIRECTORY}/src/external/foundation/Headers)
 include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
 include_directories(${DARLING_TOP_DIRECTORY}/platform-include/pthread)
 
-set(ruby_lib_sources
+set(ruby_sources
 	dmydln.c
 	dmyencoding.c
 	miniprelude.c
@@ -165,16 +165,16 @@ SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-#add_library(libruby SHARED ${ruby_sources})
-#target_link_libraries(libruby system)
-#install(TARGETS libruby DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
+add_library(libruby SHARED ${ruby_sources})
+target_link_libraries(libruby system)
+install(TARGETS libruby DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
 
 if (NOT DARLING_NO_EXECUTABLES)
 	include(darling_exe)
 	include(InstallSymlink)
 
 	add_darling_executable(ruby main.c)
-	#target_link_libraries(ruby libruby)
+	target_link_libraries(ruby libruby)
 
 	install(TARGETS ruby DESTINATION libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/bin)
 endif(NOT DARLING_NO_EXECUTABLES)
