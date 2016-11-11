@@ -19,7 +19,7 @@
 #include <stdlib.h>
 #endif
 
-#ifdef __APPLE__
+/*#ifdef __APPLE__
 #include <msgtracer_client.h>
 #include <msgtracer_keys.h>
 
@@ -34,6 +34,7 @@ mt_log_BSDServices_ScriptingLanguageUse(const char *signature)
     asl_free(m);
 }
 #endif
+*/
 
 int
 main(int argc, char **argv)
@@ -45,10 +46,11 @@ main(int argc, char **argv)
     setlocale(LC_CTYPE, "");
 #endif
 
+/*
 #ifdef __APPLE__
     mt_log_BSDServices_ScriptingLanguageUse("ruby");
 #endif
-
+*/
     ruby_sysinit(&argc, &argv);
     {
 	RUBY_INIT_STACK;

@@ -17,6 +17,8 @@ Init_id(void)
 #define rb_intern(str) rb_intern_const(str)
     rb_encoding *enc = rb_usascii_encoding();
 
+#define REGISTER_SYMID(id, name) register_symid((id), (name), strlen(name), enc)
+
     REGISTER_SYMID(idIntern, "intern");
     REGISTER_SYMID(idMethodMissing, "method_missing");
     REGISTER_SYMID(idLength, "length");

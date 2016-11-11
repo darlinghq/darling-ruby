@@ -119,8 +119,10 @@
 #define HAVE_STRUCT_TIMEVAL 1
 #define HAVE_STRUCT_TIMESPEC 1
 #define HAVE_STRUCT_TIMEZONE 1
-// Apparently we don't
-//#define HAVE_CLOCKID_T 1
+/*
+Apparently we don't have this
+#define HAVE_CLOCKID_T 1
+*/
 #define HAVE_RB_FD_INIT 1
 #define HAVE_INT8_T 1
 #define SIZEOF_INT8_T 1

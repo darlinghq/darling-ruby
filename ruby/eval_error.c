@@ -3,6 +3,11 @@
  * included by eval.c
  */
 
+#include "stdarg.h"
+#include "vm_core.h"
+#include "internal.h"
+#include "eval_intern.h"
+
 static void
 warn_printf(const char *fmt, ...)
 {

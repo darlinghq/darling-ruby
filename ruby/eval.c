@@ -20,6 +20,8 @@
 #include "vm_core.h"
 #include "probes_helper.h"
 
+#include "probes.dmyh"
+
 #define numberof(array) (int)(sizeof(array) / sizeof((array)[0]))
 
 NORETURN(void rb_raise_jump(VALUE));
