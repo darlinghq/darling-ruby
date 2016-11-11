@@ -20,7 +20,9 @@
 #include "id.h"
 
 #ifndef ARRAY_DEBUG
-# define NDEBUG
+# ifndef NDEBUG
+#  define NDEBUG
+# endif
 #endif
 #include <assert.h>
 
