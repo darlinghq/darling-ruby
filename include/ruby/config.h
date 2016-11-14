@@ -238,7 +238,7 @@
 #define HAVE_MKTIME 1
 #define HAVE_TIMEGM 1
 #define HAVE_GMTIME_R 1
-#define HAVE_CLOCK_GETTIME 1
+/*#define HAVE_CLOCK_GETTIME 1*/
 #define HAVE_GETTIMEOFDAY 1
 #define HAVE_POLL 1
 #define HAVE_PREAD 1
