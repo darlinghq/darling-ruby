@@ -47,6 +47,13 @@ include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
 include_directories(${DARLING_TOP_DIRECTORY}/platform-include/pthread)
 
 add_custom_command(
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/probes.h
+	COMMAND dtrace -o ${CMAKE_CURRENT_BINARY_DIR}/probes.h -h -C -s probes.d
+	COMMAND "sed -e 's/RUBY_/RUBY_DTRACE_/g' -e 's/PROBES_H_TMP/PROBES_H/g' -e 's/(char \\*/(const char */g' -e 's/, char \\*/, const char */g' ${CMAKE_CURRENT_BINARY_DIR}/probes.h > ${CMAKE_CURRENT_BINARY_DIR}/probes.h"
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_custom_command(
 	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/id.h
 	COMMAND ruby tool/generic_erb.rb --output ${CMAKE_CURRENT_BINARY_DIR}/id.h template/id.h.tmpl
 	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -77,6 +84,7 @@ add_custom_command(
 )
 
 set(RUBY_PREBUILD_FILES
+	${CMAKE_CURRENT_BINARY_DIR}/probes.h
 	${CMAKE_CURRENT_BINARY_DIR}/id.h
 	${CMAKE_CURRENT_BINARY_DIR}/id.c
 	${CMAKE_CURRENT_BINARY_DIR}/node_name.inc
