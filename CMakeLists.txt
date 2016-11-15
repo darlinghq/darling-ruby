@@ -46,17 +46,31 @@ include_directories(${DARLING_TOP_DIRECTORY}/src/external/foundation/Headers)
 include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
 include_directories(${DARLING_TOP_DIRECTORY}/platform-include/pthread)
 
-function(tmpl f)
-	add_custom_command(
-		OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${f}
-		COMMAND ruby "${CMAKE_CURRENT_SOURCE_DIR}/tool/generic_erb.rb" --output "${CMAKE_CURRENT_BINARY_DIR}/${f}" "${CMAKE_CURRENT_SOURCE_DIR}/template/${f}.tmpl"
-	)
-endfunction(tmpl)
+add_custom_command(
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/id.h
+	COMMAND ruby tool/generic_erb.rb --output ${CMAKE_CURRENT_BINARY_DIR}/id.h template/id.h.tmpl
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-tmpl(id.h)
-tmpl(id.c)
+add_custom_command(
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/id.c
+	COMMAND ruby tool/generic_erb.rb --output ${CMAKE_CURRENT_BINARY_DIR}/id.c template/id.c.tmpl
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-add_custom_target(ruby-tmpl-headers ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/id.h ${CMAKE_CURRENT_BINARY_DIR}/id.c)
+add_custom_command(
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/node_name.inc
+	COMMAND ruby tool/node_name.rb node.h > ${CMAKE_CURRENT_BINARY_DIR}/node_name.inc
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+set(RUBY_PREBUILD_FILES
+	${CMAKE_CURRENT_BINARY_DIR}/id.h
+	${CMAKE_CURRENT_BINARY_DIR}/id.c
+	${CMAKE_CURRENT_BINARY_DIR}/node_name.inc
+)
+
+add_custom_target(ruby-tmpl-headers ALL DEPENDS ${RUBY_PREBUILD_FILES})
 
 add_library(ruby SHARED
 	dmydln.c
