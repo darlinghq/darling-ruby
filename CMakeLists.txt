@@ -64,10 +64,24 @@ add_custom_command(
 	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+add_custom_command(
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/encdb.h
+	COMMAND ruby tool/generic_erb.rb -c -o ${CMAKE_CURRENT_BINARY_DIR}/encdb.h template/encdb.h.tmpl
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_custom_command(
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/transdb.h
+	COMMAND ruby tool/generic_erb.rb -c -o ${CMAKE_CURRENT_BINARY_DIR}/transdb.h template/transdb.h.tmpl
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 set(RUBY_PREBUILD_FILES
 	${CMAKE_CURRENT_BINARY_DIR}/id.h
 	${CMAKE_CURRENT_BINARY_DIR}/id.c
 	${CMAKE_CURRENT_BINARY_DIR}/node_name.inc
+	${CMAKE_CURRENT_BINARY_DIR}/encdb.h
+	${CMAKE_CURRENT_BINARY_DIR}/transdb.h
 )
 
 add_custom_target(ruby-tmpl-headers ALL DEPENDS ${RUBY_PREBUILD_FILES})
