@@ -23,6 +23,7 @@ set(CMAKE_SHARED_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-scri
 set(CMAKE_EXE_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${DARLING_TOP_DIRECTORY}/src/libc/include/FreeBSD)
 include_directories(${DARLING_TOP_DIRECTORY}/src/libc/include/NetBSD)
@@ -45,7 +46,19 @@ include_directories(${DARLING_TOP_DIRECTORY}/src/external/foundation/Headers)
 include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
 include_directories(${DARLING_TOP_DIRECTORY}/platform-include/pthread)
 
-add_library(libruby SHARED
+function(tmpl f)
+	add_custom_command(
+		OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${f}
+		COMMAND ruby "${CMAKE_CURRENT_SOURCE_DIR}/tool/generic_erb.rb" --output "${CMAKE_CURRENT_BINARY_DIR}/${f}" "${CMAKE_CURRENT_SOURCE_DIR}/template/${f}.tmpl"
+	)
+endfunction(tmpl)
+
+tmpl(id.h)
+tmpl(id.c)
+
+add_custom_target(ruby-tmpl-headers ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/id.h ${CMAKE_CURRENT_BINARY_DIR}/id.c)
+
+add_library(ruby SHARED
 	dmydln.c
 	dmyencoding.c
 	miniprelude.c
@@ -158,22 +171,13 @@ add_library(libruby SHARED
 	enc/koi8_u.c
 	enc/mktable.c
 	enc/shift_jis.c
-
 )
+
+add_dependencies(ruby ruby-tmpl-headers)
 
 SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling")
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-target_link_libraries(libruby system)
-install(TARGETS libruby DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
-
-if (NOT DARLING_NO_EXECUTABLES)
-	include(darling_exe)
-	include(InstallSymlink)
-
-	add_darling_executable(ruby main.c)
-	target_link_libraries(ruby libruby)
-
-	install(TARGETS ruby DESTINATION libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/bin)
-endif(NOT DARLING_NO_EXECUTABLES)
+target_link_libraries(ruby system)
+install(TARGETS ruby DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
