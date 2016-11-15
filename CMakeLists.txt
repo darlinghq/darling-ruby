@@ -16,7 +16,7 @@ add_definitions(-DPLATFORM="darwin")
 
 add_definitions(-DFALSE=0 -DTRUE=1)
 
-add_definitions(-D _XOPEN_SOURCE -D _DARWIN_C_SOURCE -D _DARWIN_UNLIMITED_SELECT -D _REENTRANT -D RUBY_EXPORT)
+add_definitions(-D _XOPEN_SOURCE -D _DARWIN_C_SOURCE -D _DARWIN_UNLIMITED_SELECT -D _REENTRANT -D RUBY_EXPORT -D FORTIFY_SOURCE=2)
 set(RUBY_WARN_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-parentheses -Wno-macro-redefined -Wno-comment -Wno-shift-negative-value -Wno-long-long -Wno-missing-field-initializers -Wno-unused-function -Wno-implicit-function-declaration -Wno-format -Wno-uninitialized")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${RUBY_WARN_FLAGS} -nostdinc -fwrapv -fPIC -ggdb -include ruby/config.h -include ruby/missing.h -include ruby/defines.h -include ruby/ruby.h")
 set(CMAKE_SHARED_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
@@ -92,9 +92,9 @@ set(RUBY_PREBUILD_FILES
 	${CMAKE_CURRENT_BINARY_DIR}/transdb.h
 )
 
-add_custom_target(ruby-tmpl-headers ALL DEPENDS ${RUBY_PREBUILD_FILES})
+add_custom_target(ruby-genfiles ALL DEPENDS ${RUBY_PREBUILD_FILES})
 
-add_library(ruby SHARED
+set(miniruby_sources
 	dmydln.c
 	dmyencoding.c
 	miniprelude.c
@@ -154,66 +154,22 @@ add_library(ruby SHARED
 	vm_backtrace.c
 	vm_trace.c
 	thread.c
-
 	cont.c
-	dln.c
-	dmyext.c
-	dmyversion.c
-	encoding.c
-	eval_error.c
-	eval_jump.c
-	goruby.c
-	id.c
-	lex.c
-	newline.c
-	siphash.c
-	sparc.c
-	thread_pthread.c
-	thread_win32.c
-	version.c
-	vm_eval.c
-	vm_exec.c
-	vm_insnhelper.c
-	vm_method.c
-	vsnprintf.c
 
 	enc/ascii.c
-	enc/big5.c
-	enc/cp949.c
-	enc/emacs_mule.c
-	enc/encdb.c
-	enc/euc_jp.c
-	enc/euc_kr.c
-	enc/euc_tw.c
-	enc/gb18030.c
-	enc/gb2312.c
-	enc/gbk.c
-	enc/iso_8859_10.c
-	enc/iso_8859_11.c
-	enc/iso_8859_13.c
-	enc/iso_8859_14.c
-	enc/iso_8859_15.c
-	enc/iso_8859_16.c
-	enc/iso_8859_1.c
-	enc/iso_8859_2.c
-	enc/iso_8859_3.c
-	enc/iso_8859_4.c
-	enc/iso_8859_5.c
-	enc/iso_8859_6.c
-	enc/iso_8859_7.c
-	enc/iso_8859_8.c
-	enc/iso_8859_9.c
-	enc/koi8_r.c
-	enc/koi8_u.c
-	enc/mktable.c
-	enc/shift_jis.c
+	enc/us_ascii.c
+	enc/unicode.c
+# FIXME: NOT FOUND	enc/utf-8.c
+
+	newline.c
+
+	missing/setproctitle.c
+
+	dmyext.c
 )
 
-add_dependencies(ruby ruby-tmpl-headers)
-
-SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling")
-SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-target_link_libraries(ruby system)
-install(TARGETS ruby DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
+if (NOT DARLING_NO_EXECUTABLES)
+	add_darling_executable(miniruby main.c ${miniruby_sources})
+	add_dependencies(miniruby ruby-genfiles)
+	target_link_libraries(miniruby system)
+endif (NOT DARLING_NO_EXECUTABLES)
