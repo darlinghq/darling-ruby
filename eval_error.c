@@ -3,6 +3,9 @@
  * included by eval.c
  */
 
+#include "vm_core.h"
+#include "eval_intern.h"
+
 static void
 warn_printf(const char *fmt, ...)
 {

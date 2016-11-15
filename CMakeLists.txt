@@ -17,7 +17,7 @@ add_definitions(-DPLATFORM="darwin")
 add_definitions(-DFALSE=0 -DTRUE=1)
 
 add_definitions(-D _XOPEN_SOURCE -D _DARWIN_C_SOURCE -D _DARWIN_UNLIMITED_SELECT -D _REENTRANT -D RUBY_EXPORT)
-set(RUBY_WARN_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-parentheses -Wno-macro-redefined -Wno-comment -Wno-shift-negative-value -Wno-long-long -Wno-missing-field-initializers -Wno-unused-function -Wno-implicit-function-declaration")
+set(RUBY_WARN_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-parentheses -Wno-macro-redefined -Wno-comment -Wno-shift-negative-value -Wno-long-long -Wno-missing-field-initializers -Wno-unused-function -Wno-implicit-function-declaration -Wno-format -Wno-uninitialized")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${RUBY_WARN_FLAGS} -nostdinc -fwrapv -fPIC -ggdb -include ruby/config.h -include ruby/missing.h -include ruby/defines.h -include ruby/ruby.h")
 set(CMAKE_SHARED_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
 set(CMAKE_EXE_LINKER_FLAGS "-nodefaultlibs -nostdlib -fPIC -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map")
@@ -45,7 +45,7 @@ include_directories(${DARLING_TOP_DIRECTORY}/src/external/foundation/Headers)
 include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
 include_directories(${DARLING_TOP_DIRECTORY}/platform-include/pthread)
 
-set(ruby_sources
+add_library(libruby SHARED
 	dmydln.c
 	dmyencoding.c
 	miniprelude.c
@@ -165,7 +165,6 @@ SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-add_library(libruby SHARED ${ruby_sources})
 target_link_libraries(libruby system)
 install(TARGETS libruby DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
 

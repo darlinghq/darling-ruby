@@ -1,6 +1,8 @@
 void Init_golf(void);
-#define ruby_options goruby_options
-#define ruby_run_node goruby_run_node
+
+// FIXME: This might break something when we actually have a change to run this stuff
+//#define ruby_options goruby_options
+//#define ruby_run_node goruby_run_node
 #include "main.c"
 #undef ruby_options
 #undef ruby_run_node
