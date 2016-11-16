@@ -97,6 +97,7 @@ add_custom_target(ruby-genfiles ALL DEPENDS ${RUBY_PREBUILD_FILES})
 set(miniruby_sources
 	dmydln.c
 	dmyencoding.c
+	dmyversion.c
 	miniprelude.c
 	array.c
 	bignum.c
@@ -159,7 +160,7 @@ set(miniruby_sources
 	enc/ascii.c
 	enc/us_ascii.c
 	enc/unicode.c
-# FIXME: NOT FOUND	enc/utf-8.c
+	enc/utf_8.c
 
 	newline.c
 
@@ -171,5 +172,5 @@ set(miniruby_sources
 if (NOT DARLING_NO_EXECUTABLES)
 	add_darling_executable(miniruby main.c ${miniruby_sources})
 	add_dependencies(miniruby ruby-genfiles)
-	target_link_libraries(miniruby system)
+	target_link_libraries(miniruby system pthread dl objc)
 endif (NOT DARLING_NO_EXECUTABLES)

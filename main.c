@@ -27,12 +27,12 @@
 void
 mt_log_BSDServices_ScriptingLanguageUse(const char *signature)
 {
-    aslmsg m = asl_new(ASL_TYPE_MSG);
+    /*aslmsg m = asl_new(ASL_TYPE_MSG);
     asl_set(m, "com.apple.message.domain", "com.apple.BSDServices.ScriptingLanguageUse" );
     asl_set(m, "com.apple.message.signature", signature);
     asl_set(m, "com.apple.message.summarize", "YES");
     asl_log(NULL, m, ASL_LEVEL_NOTICE, "");
-    asl_free(m);
+    asl_free(m);*/
 }
 #endif
 
