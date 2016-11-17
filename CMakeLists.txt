@@ -46,6 +46,10 @@ include_directories(${DARLING_TOP_DIRECTORY}/src/external/foundation/Headers)
 include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
 include_directories(${DARLING_TOP_DIRECTORY}/platform-include/pthread)
 
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling")
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 add_custom_command(
 	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/id.h
 	COMMAND ruby tool/generic_erb.rb --output ${CMAKE_CURRENT_BINARY_DIR}/id.h template/id.h.tmpl
@@ -86,11 +90,7 @@ set(RUBY_PREBUILD_FILES
 
 add_custom_target(ruby-genfiles ALL DEPENDS ${RUBY_PREBUILD_FILES})
 
-set(miniruby_sources
-	dmydln.c
-	dmyencoding.c
-	dmyversion.c
-	miniprelude.c
+set(ruby_sources
 	array.c
 	bignum.c
 	class.c
@@ -161,8 +161,19 @@ set(miniruby_sources
 	dmyext.c
 )
 
+add_library(rubylib SHARED ${ruby_sources} dln.c encoding.c prelude.c)
+add_dependencies(rubylib ruby-genfiles)
+set_target_properties(rubylib PROPERTIES OUTPUT_NAME ruby)
+target_link_libraries(rubylib system objc)
+install(TARGETS rubylib DESTINATION ${CMAKE_INSTALL_LIBDIR}/darling)
+
 if (NOT DARLING_NO_EXECUTABLES)
-	add_darling_executable(miniruby main.c ${miniruby_sources})
-	add_dependencies(miniruby ruby-genfiles)
-	target_link_libraries(miniruby system objc)
+	#add_darling_executable(miniruby main.c ${ruby_sources} dmydln.c dmyencoding.c dmyversion.c miniprelude.c)
+	add_darling_executable(rubyexe main.c dmyext.c version.c)
+	add_dependencies(rubyexe ruby-genfiles)
+	set_target_properties(rubyexe PROPERTIES OUTPUT_NAME ruby)
+	target_link_libraries(rubyexe system objc rubylib)
+	install(TARGETS rubyexe DESTINATION libexec/darling/usr/local/bin)
 endif (NOT DARLING_NO_EXECUTABLES)
+
+install(DIRECTORY 2.0.0 DESTINATION libexec/darling/usr/local/lib/ruby)
