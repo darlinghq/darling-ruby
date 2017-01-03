@@ -116,7 +116,7 @@
 #define HAVE_STRUCT_TIMEVAL 1
 #define HAVE_STRUCT_TIMESPEC 1
 #define HAVE_STRUCT_TIMEZONE 1
-#define HAVE_CLOCKID_T 1
+//#define HAVE_CLOCKID_T 1
 #define HAVE_RB_FD_INIT 1
 #define HAVE_INT8_T 1
 #define SIZEOF_INT8_T 1
@@ -283,5 +283,5 @@
 #define DLEXT_MAXLEN 7
 #define DLEXT ".bundle"
 #define HAVE_PTHREAD_H 1
-#define RUBY_EXEC_PREFIX "/usr/local"
+#define RUBY_EXEC_PREFIX "/usr"
 #endif /* INCLUDE_RUBY_CONFIG_H */

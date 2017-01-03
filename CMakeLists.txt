@@ -4,8 +4,9 @@ include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/include
 	${CMAKE_CURRENT_SOURCE_DIR}/ruby
 	${CMAKE_CURRENT_SOURCE_DIR}/ruby/include
+
 	${CMAKE_SOURCE_DIR}/platform-include
-	${CMAKE_SOURCE_DIR}/src/libc/include
+	${CMAKE_SOURCE_DIR}/src/libc/gen
 )
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling")
@@ -21,7 +22,8 @@ add_definitions(
 	-Wno-implicit-int
 	-Wno-implicit-function-declaration
 	-Wno-return-type
-
+	-Wno-macro-redefined
+	-Wno-uninitialized
 	-D_FORTIFY_SOURCE=2
 	-D_XOPEN_SOURCE
 	-D_DARWIN_C_SOURCE
@@ -29,15 +31,20 @@ add_definitions(
 	-D_REENTRANT
 	-D__APPLE__
 	-DMACOSX
+
+	-DFALSE=0
+	-DTRUE=1
+
+	-DDTRACE_PROBES_DISABLED # So nice of them to have this!
 )
 
 set(ruby_link_flags "-Wl,-undefined,dynamic_lookup -Wl,-multiply_defined,suppress -fstack-protector -Wl,-u,_objc_msgSend -Wl,-pie -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map -nodefaultlibs -nostdlib")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -fwrapv -pipe -fstack-protector -fno-strict-overflow -fvisibility=hidden")
+# The C_FLAG -fno-strict-overflow should be used, but Clang doesn't know what it is
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -fwrapv -fstack-protector -fvisibility=hidden -pipe -include ruby/config.h -include ruby/missing.h -include ruby.h")
+
 set(CMAKE_SHARED_LINKER_FLAGS "{ruby_link_flags} -dynamic -bundle")
 set(CMAKE_EXE_LINKER_FLAGS "${ruby_link_flags}")
-
-set_property(DIRECTORY PROPERTY COMPILE_FLAGS "-include ruby/config.h -include ruby/missing.h")
 
 add_library(rubycore OBJECT
 	ruby/dln.c
