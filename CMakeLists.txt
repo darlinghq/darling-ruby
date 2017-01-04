@@ -7,6 +7,8 @@ include_directories(
 
 	${CMAKE_SOURCE_DIR}/platform-include
 	${CMAKE_SOURCE_DIR}/src/libc/gen
+	${CMAKE_SOURCE_DIR}/src/CommonCrypto
+	${CMAKE_SOURCE_DIR}/src/ncurses/include
 )
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling")
@@ -179,7 +181,19 @@ add_library(single_byte SHARED ruby/enc/trans/single_byte.c)
 add_library(utf8_mac SHARED ruby/enc/trans/utf8_mac.c)
 add_library(utf_16_32 SHARED ruby/enc/trans/utf_16_32.c)
 
-set_target_properties(encdb big5 emacs_mule euc_jp euc_kr euc_tw gb2312 gb18030 gbk iso_8859_1
+add_library(bigdecimal SHARED ruby/ext/bigdecimal/bigdecimal.c)
+add_library(continuation SHARED ruby/ext/continuation/continuation.c)
+add_library(coverage SHARED ruby/ext/coverage/coverage.c)
+add_library(curses SHARED ruby/ext/curses/curses.c)
+add_library(date_core SHARED ruby/ext/date/date_core.c ruby/ext/date/date_parse.c ruby/ext/date/date_strftime.c ruby/ext/date/date_strptime.c)
+add_library(dbm SHARED ruby/ext/dbm/dbm.c)
+add_library(digest SHARED ruby/ext/digest/digest.c)
+add_library(bubblebabble SHARED ruby/ext/digest/bubblebabble/bubblebabble.c)
+add_library(md5 SHARED ruby/ext/digest/md5/md5init.c ruby/ext/digest/md5/md5cc.c)
+
+# Encoding and transcoding bundles
+set_target_properties(
+	encdb big5 emacs_mule euc_jp euc_kr euc_tw gb2312 gb18030 gbk iso_8859_1
 	iso_8859_2 iso_8859_3 iso_8859_4 iso_8859_5 iso_8859_6 iso_8859_7 iso_8859_8 iso_8859_9
 	iso_8859_10 iso_8859_11 iso_8859_13 iso_8859_14 iso_8859_15 iso_8859_16 koi8_r
 	koi8_u shift_jis utf_16be utf_16le utf_32be utf_32le windows_31j windows_1251
@@ -188,5 +202,28 @@ set_target_properties(encdb big5 emacs_mule euc_jp euc_kr euc_tw gb2312 gb18030 
 	emoji_sjis_softbank escape gb18030-trans gbk-trans iso2022 japanese japanese_euc japanese_sjis
 	korean single_byte utf8_mac utf_16_32
 
-	PROPERTIES COMPILE_FLAGS "-bundle -DONIG_ENC_REGISTER=rb_enc_register -fno-common" SUFFIX ".bundle" PREFIX ""
+	PROPERTIES
+		COMPILE_FLAGS "-bundle -DONIG_ENC_REGISTER=rb_enc_register -fno-common"
+		SUFFIX ".bundle" 
+		PREFIX ""
+)
+
+target_include_directories(bigdecimal PRIVATE extconfs/bigdecimal)
+target_include_directories(continuation PRIVATE extconfs/continuation)
+target_include_directories(coverage PRIVATE extconfs/coverage)
+target_include_directories(curses PRIVATE extconfs/curses)
+target_include_directories(date_core PRIVATE extconfs/date)
+target_include_directories(dbm PRIVATE extconfs/dbm)
+target_include_directories(digest PRIVATE extconfs/digest ruby/ext/digest)
+target_include_directories(bubblebabble PRIVATE extconfs/digest/bubblebabble ruby/ext/digest)
+target_include_directories(md5 PRIVATE extconfs/digest/md5 ruby/ext/digest)
+
+# Other bundles
+set_target_properties(
+	bigdecimal continuation continuation coverage curses date_core dbm digest bubblebabble md5
+
+	PROPERTIES
+		COMPILE_FLAGS "-bundle -DRUBY_EXTCONF_H=\\\"extconf.h\\\" -fno-common"
+		SUFFIX ".bundle"
+		PREFIX ""
 )
