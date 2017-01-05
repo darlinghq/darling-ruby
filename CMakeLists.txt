@@ -9,6 +9,9 @@ include_directories(
 	${CMAKE_SOURCE_DIR}/src/libc/gen
 	${CMAKE_SOURCE_DIR}/src/CommonCrypto
 	${CMAKE_SOURCE_DIR}/src/ncurses/include
+	${CMAKE_SOURCE_DIR}/src/libffi/include
+
+	${CMAKE_SOURCE_DIR}/platform-include/sys
 )
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/darling")
@@ -26,6 +29,11 @@ add_definitions(
 	-Wno-return-type
 	-Wno-macro-redefined
 	-Wno-uninitialized
+	-Wno-incompatible-pointer-types-discards-qualifiers
+	-Wno-parentheses
+	-Wno-int-conversion
+	-Wno-logical-op-parentheses
+
 	-D_FORTIFY_SOURCE=2
 	-D_XOPEN_SOURCE
 	-D_DARWIN_C_SOURCE
@@ -181,16 +189,6 @@ add_library(single_byte SHARED ruby/enc/trans/single_byte.c)
 add_library(utf8_mac SHARED ruby/enc/trans/utf8_mac.c)
 add_library(utf_16_32 SHARED ruby/enc/trans/utf_16_32.c)
 
-add_library(bigdecimal SHARED ruby/ext/bigdecimal/bigdecimal.c)
-add_library(continuation SHARED ruby/ext/continuation/continuation.c)
-add_library(coverage SHARED ruby/ext/coverage/coverage.c)
-add_library(curses SHARED ruby/ext/curses/curses.c)
-add_library(date_core SHARED ruby/ext/date/date_core.c ruby/ext/date/date_parse.c ruby/ext/date/date_strftime.c ruby/ext/date/date_strptime.c)
-add_library(dbm SHARED ruby/ext/dbm/dbm.c)
-add_library(digest SHARED ruby/ext/digest/digest.c)
-add_library(bubblebabble SHARED ruby/ext/digest/bubblebabble/bubblebabble.c)
-add_library(md5 SHARED ruby/ext/digest/md5/md5init.c ruby/ext/digest/md5/md5cc.c)
-
 # Encoding and transcoding bundles
 set_target_properties(
 	encdb big5 emacs_mule euc_jp euc_kr euc_tw gb2312 gb18030 gbk iso_8859_1
@@ -208,6 +206,41 @@ set_target_properties(
 		PREFIX ""
 )
 
+add_library(bigdecimal SHARED ruby/ext/bigdecimal/bigdecimal.c)
+add_library(continuation SHARED ruby/ext/continuation/continuation.c)
+add_library(coverage SHARED ruby/ext/coverage/coverage.c)
+add_library(curses SHARED ruby/ext/curses/curses.c)
+add_library(date_core SHARED ruby/ext/date/date_core.c ruby/ext/date/date_parse.c ruby/ext/date/date_strftime.c ruby/ext/date/date_strptime.c)
+add_library(dbm SHARED ruby/ext/dbm/dbm.c)
+add_library(digest SHARED ruby/ext/digest/digest.c)
+add_library(bubblebabble SHARED ruby/ext/digest/bubblebabble/bubblebabble.c)
+add_library(md5 SHARED ruby/ext/digest/md5/md5init.c ruby/ext/digest/md5/md5cc.c)
+add_library(rmd160 SHARED ruby/ext/digest/rmd160/rmd160init.c ruby/ext/digest/rmd160/rmd160.c)
+add_library(sha1 SHARED ruby/ext/digest/sha1/sha1init.c ruby/ext/digest/sha1/sha1cc.c)
+add_library(sha2 SHARED ruby/ext/digest/sha2/sha2init.c ruby/ext/digest/sha2/sha2.c)
+add_library(dl SHARED ruby/ext/dl/cfunc.c ruby/ext/dl/cptr.c ruby/ext/dl/dl.c ruby/ext/dl/handle.c)
+add_library(callback SHARED ruby/ext/dl/callback/callback-0.c ruby/ext/dl/callback/callback-1.c ruby/ext/dl/callback/callback-2.c ruby/ext/dl/callback/callback-3.c ruby/ext/dl/callback/callback-4.c ruby/ext/dl/callback/callback-5.c ruby/ext/dl/callback/callback-6.c ruby/ext/dl/callback/callback-7.c ruby/ext/dl/callback/callback-8.c)
+add_library(etc SHARED ruby/ext/etc/etc.c)
+add_library(fcntl SHARED ruby/ext/fcntl/fcntl.c)
+add_library(fiber SHARED ruby/ext/fiber/fiber.c)
+add_library(fiddle SHARED ruby/ext/fiddle/closure.c ruby/ext/fiddle/conversions.c ruby/ext/fiddle/fiddle.c ruby/ext/fiddle/function.c ruby/ext/fiddle/handle.c ruby/ext/fiddle/pointer.c)
+add_library(console SHARED ruby/ext/io/console/console.c)
+add_library(nonblock SHARED ruby/ext/io/nonblock/nonblock.c)
+add_library(wait SHARED ruby/ext/io/wait/wait.c)
+add_library(generator SHARED ruby/ext/json/generator/generator.c)
+add_library(parser SHARED ruby/ext/json/parser/parser.c)
+add_library(complex SHARED ruby/ext/mathn/complex/complex.c)
+add_library(rational SHARED ruby/ext/mathn/rational/rational.c)
+add_library(nkf SHARED ruby/ext/nkf/nkf.c)
+add_library(objspace SHARED ruby/ext/objspace/objspace.c)
+add_library(pathname SHARED ruby/ext/pathname/pathname.c)
+add_library(psych SHARED ruby/ext/psych/psych.c ruby/ext/psych/psych_emitter.c ruby/ext/psych/psych_parser.c ruby/ext/psych/psych_to_ruby.c ruby/ext/psych/psych_yaml_tree.c)
+add_library(pty SHARED ruby/ext/pty/pty.c)
+add_library(cparse SHARED ruby/ext/racc/cparse/cparse.c)
+#add_library(readline SHARED ruby/ext/readline/readline.c) FIXME: LIBRARY MISSING FROM DARLING: READLINE
+add_library(ripper SHARED ruby/ext/ripper/ripper.c)
+add_library(sdbm SHARED ruby/ext/sdbm/_sdbm.c ruby/ext/sdbm/init.c)
+
 target_include_directories(bigdecimal PRIVATE extconfs/bigdecimal)
 target_include_directories(continuation PRIVATE extconfs/continuation)
 target_include_directories(coverage PRIVATE extconfs/coverage)
@@ -217,10 +250,38 @@ target_include_directories(dbm PRIVATE extconfs/dbm)
 target_include_directories(digest PRIVATE extconfs/digest ruby/ext/digest)
 target_include_directories(bubblebabble PRIVATE extconfs/digest/bubblebabble ruby/ext/digest)
 target_include_directories(md5 PRIVATE extconfs/digest/md5 ruby/ext/digest)
+target_include_directories(rmd160 PRIVATE extconfs/digest/rmd160 ruby/ext/digest)
+target_include_directories(sha1 PRIVATE extconfs/digest/sha1 ruby/ext/digest)
+target_include_directories(sha2 PRIVATE extconfs/digest/sha2 ruby/ext/digest)
+target_include_directories(dl PRIVATE extconfs/dl ruby/ext/dl)
+target_include_directories(callback PRIVATE extconfs/dl/callback ruby/ext/dl)
+target_include_directories(etc PRIVATE extconfs/etc)
+target_include_directories(fcntl PRIVATE extconfs/fcntl)
+target_include_directories(fiber PRIVATE extconfs/fiber)
+target_include_directories(fiddle PRIVATE extconfs/fiddle ruby/ext/fiddle)
+target_include_directories(console PRIVATE extconfs/io/console)
+target_include_directories(nonblock PRIVATE extconfs/io/nonblock)
+target_include_directories(wait PRIVATE extconfs/io/wait)
+target_include_directories(generator PRIVATE extconfs/json/generator)
+target_include_directories(parser PRIVATE extconfs/json/parser)
+target_include_directories(complex PRIVATE extconfs/mathn/complex)
+target_include_directories(rational PRIVATE extconfs/mathn/rational)
+target_include_directories(nkf PRIVATE extconfs/nkf)
+target_include_directories(objspace PRIVATE extconfs/objspace)
+target_include_directories(pathname PRIVATE extconfs/pathname)
+target_include_directories(psych PRIVATE extconfs/psych ruby/ext/psych ruby/ext/psych/yaml)
+target_include_directories(pty PRIVATE extconfs/pty)
+target_include_directories(cparse PRIVATE extconfs/racc/cparse)
+#target_include_directories(readline PRIVATE extconfs/readline)
+target_include_directories(ripper PRIVATE extconfs/ripper ruby/ext/ripper)
+target_include_directories(sdbm PRIVATE extconfs/sdbm)
 
 # Other bundles
 set_target_properties(
 	bigdecimal continuation continuation coverage curses date_core dbm digest bubblebabble md5
+	rmd160 sha1 sha2 dl callback etc fcntl fiber fiddle console nonblock wait generator parser
+	complex rational nkf objspace pathname psych pty cparse #readline
+	ripper sdbm
 
 	PROPERTIES
 		COMPILE_FLAGS "-bundle -DRUBY_EXTCONF_H=\\\"extconf.h\\\" -fno-common"
