@@ -2,6 +2,7 @@ project(ruby)
 
 include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/include
+	${CMAKE_CURRENT_SOURCE_DIR}/gen
 	${CMAKE_CURRENT_SOURCE_DIR}/ruby
 	${CMAKE_CURRENT_SOURCE_DIR}/ruby/include
 
@@ -10,7 +11,7 @@ include_directories(
 	${CMAKE_SOURCE_DIR}/src/CommonCrypto
 	${CMAKE_SOURCE_DIR}/src/ncurses/include
 	${CMAKE_SOURCE_DIR}/src/libffi/include
-
+	${CMAKE_SOURCE_DIR}/src/external/zlib
 	${CMAKE_SOURCE_DIR}/platform-include/sys
 )
 
@@ -52,7 +53,7 @@ add_definitions(
 set(ruby_link_flags "-Wl,-undefined,dynamic_lookup -Wl,--allow-multiple-definition -fstack-protector -Wl,-u,_objc_msgSend -Wl,-pie -Wl,--version-script=${DARLING_TOP_DIRECTORY}/darwin.map -nodefaultlibs -nostdlib")
 
 # The C_FLAG -fno-strict-overflow should be used, but Clang doesn't know what it is
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -fwrapv -fstack-protector -fvisibility=hidden -pipe -include ruby/config.h -include ruby/missing.h -include ruby.h")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -fpie -fwrapv -fstack-protector -fvisibility=hidden -pipe -include ruby/config.h -include ruby/missing.h -include ruby.h")
 
 set(CMAKE_SHARED_LINKER_FLAGS "${ruby_link_flags}")
 set(CMAKE_EXE_LINKER_FLAGS "${ruby_link_flags}")
@@ -240,6 +241,26 @@ add_library(cparse SHARED ruby/ext/racc/cparse/cparse.c)
 #add_library(readline SHARED ruby/ext/readline/readline.c) FIXME: LIBRARY MISSING FROM DARLING: READLINE
 add_library(ripper SHARED ruby/ext/ripper/ripper.c)
 add_library(sdbm SHARED ruby/ext/sdbm/_sdbm.c ruby/ext/sdbm/init.c)
+add_library(socket SHARED
+	ruby/ext/socket/init.c
+	ruby/ext/socket/constants.c
+	ruby/ext/socket/basicsocket.c
+	ruby/ext/socket/socket.c
+	ruby/ext/socket/ipsocket.c
+	ruby/ext/socket/tcpsocket.c
+	ruby/ext/socket/tcpserver.c
+	ruby/ext/socket/sockssocket.c
+	ruby/ext/socket/udpsocket.c
+	ruby/ext/socket/unixsocket.c
+	ruby/ext/socket/unixserver.c
+	ruby/ext/socket/option.c
+	ruby/ext/socket/ancdata.c
+	ruby/ext/socket/raddrinfo.c
+)
+add_library(stringio SHARED ruby/ext/stringio/stringio.c)
+add_library(strscan SHARED ruby/ext/strscan/strscan.c)
+add_library(syslog SHARED ruby/ext/syslog/syslog.c)
+add_library(zlib SHARED ruby/ext/zlib/zlib.c)
 
 target_include_directories(bigdecimal PRIVATE extconfs/bigdecimal)
 target_include_directories(continuation PRIVATE extconfs/continuation)
@@ -275,16 +296,89 @@ target_include_directories(cparse PRIVATE extconfs/racc/cparse)
 #target_include_directories(readline PRIVATE extconfs/readline)
 target_include_directories(ripper PRIVATE extconfs/ripper ruby/ext/ripper)
 target_include_directories(sdbm PRIVATE extconfs/sdbm)
+target_include_directories(socket PRIVATE extconfs/socket ruby/ext/socket)
+target_include_directories(stringio PRIVATE extconfs/stringio)
+target_include_directories(strscan PRIVATE extconfs/strscan)
+target_include_directories(syslog PRIVATE extconfs/syslog)
+target_include_directories(zlib PRIVATE extconfs/zlib)
 
 # Other bundles
 set_target_properties(
 	bigdecimal continuation continuation coverage curses date_core dbm digest bubblebabble md5
 	rmd160 sha1 sha2 dl callback etc fcntl fiber fiddle console nonblock wait generator parser
 	complex rational nkf objspace pathname psych pty cparse #readline
-	ripper sdbm
+	ripper sdbm socket stringio strscan syslog zlib
 
 	PROPERTIES
 		COMPILE_FLAGS "-bundle -DRUBY_EXTCONF_H=\\\"extconf.h\\\" -fno-common"
 		SUFFIX ".bundle"
 		PREFIX ""
 )
+
+add_darling_executable(ruby ruby/main.c ruby/dmyext.c)
+target_link_libraries(ruby ruby-static)
+
+set(ruby_root "libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr")
+set(ruby_bundle_root "{ruby_root}/lib/ruby/2.0.0/universal-darwin16")
+
+install(DIRECTORY Ruby.framework DESTINATION libexec/darling/System/Library/Frameworks)
+
+install(TARGETS
+	bigdecimal continuation coverage curses date_core dbm digest dl etc fcntl fiber fiddle nkf
+	objspace pathname psych pty ripper sdbm socket stringio strscan syslog zlib
+	# readline openssl
+
+	DESTINATION ${ruby_bundle_root}
+)
+
+install(TARGETS
+	bubblebabble md5 rmd160 sha1 sha2
+
+	DESTINATION ${ruby_bundle_root}/digest
+)
+
+install(TARGETS callback DESTINATION ${ruby_bundle_root}/dl)
+
+install(TARGETS
+	big5 cp949 emacs_mule encdb euc_jp euc_kr euc_tw gb2312 gb18030 gbk iso_8859_1 iso_8859_2
+	iso_8859_3 iso_8859_4 iso_8859_5 iso_8859_6 iso_8859_7 iso_8859_8 iso_8859_9 iso_8859_10
+	iso_8859_11 iso_8859_13 iso_8859_14 iso_8859_15 iso_8859_16 koi8_r koi8_u shift_jis utf_16be
+	utf_16le utf_32be utf_32le windows_31j windows_1251
+
+	DESTINATION ${ruby_bundle_root}/enc
+)
+
+install(TARGETS
+	big5-trans chinese emoji emoji_iso2022_kddi emoji_sjis_docomo emoji_sjis_kddi emoji_sjis_softbank
+	escape gb18030-trans gbk-trans iso2022 japanese japanese_euc japanese_sjis korean single_byte transdb
+	utf8_mac utf_16_32
+
+	DESTINATION ${ruby_bundle_root}/enc/trans
+)
+
+install(TARGETS
+	console nonblock wait
+
+	DESTINATION ${ruby_bundle_root}/io
+)
+
+install(TARGETS
+	generator parser
+
+	DESTINATION ${ruby_bundle_root}/json/ext
+)
+
+install(TARGETS
+	complex rational
+
+	DESTINATION ${ruby_bundle_root}/mathn
+)
+
+install(TARGETS
+	cparse
+
+	DESTINATION ${ruby_bundle_root}/racc
+)
+
+install(TARGETS ruby DESTINATION ${ruby_root}/bin)
+
