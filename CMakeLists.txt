@@ -135,6 +135,10 @@ add_library(ruby-static STATIC
 	$<TARGET_OBJECTS:rubycore>
 )
 
+add_library(ruby-2.0.0 SHARED
+	$<TARGET_OBJECTS:rubycore>
+)
+
 add_library(encdb SHARED ruby/enc/encdb.c)
 add_library(big5 SHARED ruby/enc/big5.c)
 add_library(cp949 SHARED ruby/enc/cp949.c)
@@ -316,10 +320,10 @@ set_target_properties(
 )
 
 add_darling_executable(ruby ruby/main.c ruby/dmyext.c)
-target_link_libraries(ruby ruby-static)
+target_link_libraries(ruby ruby-2.0.0)
 
 set(ruby_root "libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr")
-set(ruby_bundle_root "{ruby_root}/lib/ruby/2.0.0/universal-darwin16")
+set(ruby_bundle_root "${ruby_root}/lib/ruby/2.0.0/universal-darwin16")
 
 install(DIRECTORY Ruby.framework DESTINATION libexec/darling/System/Library/Frameworks)
 
@@ -381,4 +385,3 @@ install(TARGETS
 )
 
 install(TARGETS ruby DESTINATION ${ruby_root}/bin)
-
