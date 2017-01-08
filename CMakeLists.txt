@@ -322,6 +322,7 @@ set_target_properties(
 if (NOT DARLING_NO_EXECUTABLES)
 	add_darling_executable(ruby ruby/main.c ruby/dmyext.c)
 	target_link_libraries(ruby ruby-2.0.0)
+	install(TARGETS ruby DESTINATION ${ruby_root}/bin)
 endif (NOT DARLING_NO_EXECUTABLES)
 
 set(ruby_root "libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr")
@@ -386,4 +387,3 @@ install(TARGETS
 	DESTINATION ${ruby_bundle_root}/racc
 )
 
-install(TARGETS ruby DESTINATION ${ruby_root}/bin)
