@@ -46,11 +46,16 @@
 #define HAVE_OFF_T 1
 #define SIZEOF_INT 4
 #define SIZEOF_SHORT 2
-#define SIZEOF_LONG 8
 #define SIZEOF_LONG_LONG 8
 #define SIZEOF___INT64 0
 #define SIZEOF_OFF_T 8
+#ifdef __x86_64__
 #define SIZEOF_VOIDP 8
+#define SIZEOF_LONG 8
+#else
+#define SIZEOF_VOIDP 4
+#define SIZEOF_LONG 4
+#endif
 #define SIZEOF_FLOAT 4
 #define SIZEOF_DOUBLE 8
 #define SIZEOF_TIME_T 8
