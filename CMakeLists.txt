@@ -325,7 +325,10 @@ target_link_libraries(ruby ruby-2.0.0)
 set(ruby_root "libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr")
 set(ruby_bundle_root "${ruby_root}/lib/ruby/2.0.0/universal-darwin16")
 
-install(DIRECTORY Ruby.framework DESTINATION libexec/darling/System/Library/Frameworks)
+install(DIRECTORY Ruby.framework
+	DESTINATION libexec/darling/System/Library/Frameworks
+	USE_SOURCE_PERMISSIONS
+)
 
 install(TARGETS
 	bigdecimal continuation coverage curses date_core dbm digest dl etc fcntl fiber fiddle nkf
@@ -360,6 +363,8 @@ install(TARGETS
 	DESTINATION ${ruby_bundle_root}/enc/trans
 )
 
+install(TARGETS big5-trans DESTINATION ${ruby_bundle_root}/enc/trans RENAME big5)
+
 install(TARGETS
 	console nonblock wait
 
@@ -385,3 +390,15 @@ install(TARGETS
 )
 
 install(TARGETS ruby DESTINATION ${ruby_root}/bin)
+
+set(ruby_sym_root "/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr")
+set(ruby_sym_dest "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/bin")
+
+InstallSymlink(${ruby_sym_root}/bin/erb ${ruby_sym_dest}/erb)
+InstallSymlink(${ruby_sym_root}/bin/gem ${ruby_sym_dest}/gem)
+InstallSymlink(${ruby_sym_root}/bin/irb ${ruby_sym_dest}/irb)
+InstallSymlink(${ruby_sym_root}/bin/rake ${ruby_sym_dest}/rake)
+InstallSymlink(${ruby_sym_root}/bin/rdoc ${ruby_sym_dest}/rdoc)
+InstallSymlink(${ruby_sym_root}/bin/ri ${ruby_sym_dest}/ri)
+InstallSymlink(${ruby_sym_root}/bin/testrb ${ruby_sym_dest}/testrb)
+InstallSymlink(${ruby_sym_root}/bin/ruby ${ruby_sym_dest}/ruby)
