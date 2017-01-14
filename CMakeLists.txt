@@ -319,14 +319,14 @@ set_target_properties(
 		PREFIX ""
 )
 
+set(ruby_root "libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr")
+set(ruby_bundle_root "${ruby_root}/lib/ruby/2.0.0/universal-darwin16")
+
 if (NOT DARLING_NO_EXECUTABLES)
 	add_darling_executable(ruby ruby/main.c ruby/dmyext.c)
 	target_link_libraries(ruby ruby-2.0.0)
 	install(TARGETS ruby DESTINATION ${ruby_root}/bin)
 endif (NOT DARLING_NO_EXECUTABLES)
-
-set(ruby_root "libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr")
-set(ruby_bundle_root "${ruby_root}/lib/ruby/2.0.0/universal-darwin16")
 
 install(DIRECTORY Ruby.framework
 	DESTINATION libexec/darling/System/Library/Frameworks
