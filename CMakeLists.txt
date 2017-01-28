@@ -333,6 +333,8 @@ install(DIRECTORY Ruby.framework
 	USE_SOURCE_PERMISSIONS
 )
 
+install(TARGETS ruby-2.0.0 DESTINATION libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0 RENAME Ruby)
+
 install(TARGETS
 	bigdecimal continuation coverage curses date_core dbm digest dl etc fcntl fiber fiddle nkf
 	objspace pathname psych pty ripper sdbm socket stringio strscan syslog zlib
