@@ -138,6 +138,7 @@ add_library(ruby-static STATIC
 add_library(ruby-2.0.0 SHARED
 	$<TARGET_OBJECTS:rubycore>
 )
+set_target_properties(ruby-2.0.0 PROPERTIES OUTPUT_NAME "Ruby" PREFIX "" SUFFIX "")
 
 add_library(encdb SHARED ruby/enc/encdb.c)
 add_library(big5 SHARED ruby/enc/big5.c)
@@ -324,6 +325,7 @@ set(ruby_bundle_root "${ruby_root}/lib/ruby/2.0.0/universal-darwin16")
 
 if (NOT DARLING_NO_EXECUTABLES)
 	add_darling_executable(ruby ruby/main.c ruby/dmyext.c)
+	set_target_properties(ruby PROPERTIES INSTALL_RPATH "/System/Library/Frameworks/Ruby.framework/Versions/2.0")
 	target_link_libraries(ruby ruby-2.0.0)
 	install(TARGETS ruby DESTINATION ${ruby_root}/bin)
 endif (NOT DARLING_NO_EXECUTABLES)
@@ -333,7 +335,7 @@ install(DIRECTORY Ruby.framework
 	USE_SOURCE_PERMISSIONS
 )
 
-install(TARGETS ruby-2.0.0 DESTINATION libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0 RENAME Ruby)
+install(TARGETS ruby-2.0.0 DESTINATION libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0)
 
 install(TARGETS
 	bigdecimal continuation coverage curses date_core dbm digest dl etc fcntl fiber fiddle nkf
