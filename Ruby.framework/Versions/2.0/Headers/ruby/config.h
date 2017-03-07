@@ -47,9 +47,9 @@
 #define HAVE_OFF_T 1
 #define SIZEOF_INT 4
 #define SIZEOF_SHORT 2
-#if defined(__ILP32__) || defined(__ILP32) || defined(_ILP32) || defined(ILP32)
-#define SIZEOF_LONG 4
-#elif defined(__LP64__) || defined(__LP64) || defined(_LP64) || defined(LP64)
+#if defined(__x86_64__)
+#define SIZEOF_LONG 8
+#else
 #define SIZEOF_LONG 8
 #endif
 #define SIZEOF_LONG_LONG 8

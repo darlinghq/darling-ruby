@@ -9,4 +9,4 @@
 #define RUBY_SITE_ARCH_LIB_FOR(arch) RUBY_SITE_LIB2"/"arch
 #define RUBY_VENDOR_LIB RUBY_LIB_PREFIX"/vendor_ruby"
 #define RUBY_VENDOR_ARCH_LIB_FOR(arch) RUBY_VENDOR_LIB2"/"arch
-#define RUBY_PLATFORM "x86_64-darwin16"
+#define RUBY_PLATFORM "universal-darwin16"
