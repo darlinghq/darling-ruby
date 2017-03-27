@@ -103,8 +103,8 @@
 #define RUBY_FUNC_EXPORTED __attribute__ ((visibility("default"))) extern
 #define HAVE_DECL_SYS_NERR 1
 #define HAVE_LIBDL 1
-#define SIZEOF_SIZE_T 8
-#define SIZEOF_PTRDIFF_T 8
+#define SIZEOF_SIZE_T SIZEOF_LONG
+#define SIZEOF_PTRDIFF_T SIZEOF_VOIDP
 #define PRI_SIZE_PREFIX "z"
 #define PRI_PTRDIFF_PREFIX "t"
 #define HAVE_STRUCT_STAT_ST_BLKSIZE 1
@@ -121,6 +121,8 @@
 #define HAVE_STRUCT_TIMEVAL 1
 #define HAVE_STRUCT_TIMESPEC 1
 #define HAVE_STRUCT_TIMEZONE 1
+#define HAVE_EDITLINE_READLINE_H 1
+#define HAVE_DLFCN_H
 //#define HAVE_CLOCKID_T 1
 #define HAVE_RB_FD_INIT 1
 #define HAVE_INT8_T 1
@@ -288,5 +290,10 @@
 #define DLEXT_MAXLEN 7
 #define DLEXT ".bundle"
 #define HAVE_PTHREAD_H 1
-#define RUBY_EXEC_PREFIX "/usr"
+#define RUBY_EXEC_PREFIX "/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr"
+#ifdef __x86_64__
+#define RUBY_PLATFORM_CPU "x86_64"
+#elif defined(__i386__)
+#define RUBY_PLATFORM_CPU "i386"
+#endif
 #endif /* INCLUDE_RUBY_CONFIG_H */
