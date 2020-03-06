@@ -17,20 +17,8 @@ include_directories(
 )
 
 add_definitions(
-	-Wno-unused-function
-	-Wno-shift-negative-value
-	-Wno-parentheses
-	-Wno-dangling-else
-	-Wno-deprecated-declarations
-	-Wno-implicit-int
-	-Wno-implicit-function-declaration
-	-Wno-return-type
-	-Wno-macro-redefined
-	-Wno-uninitialized
-	-Wno-incompatible-pointer-types-discards-qualifiers
-	-Wno-parentheses
-	-Wno-int-conversion
-	-Wno-logical-op-parentheses
+	-w
+	-nostdinc
 
 	-D_FORTIFY_SOURCE=2
 	-D_XOPEN_SOURCE
@@ -50,7 +38,7 @@ add_definitions(
 set(ruby_link_flags "-Wl,-multiply_defined,suppress -fstack-protector -nodefaultlibs -nostdlib")
 
 # The C_FLAG -fno-strict-overflow should be used, but Clang doesn't know what it is
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -fwrapv -fstack-protector -include ruby/config.h -include ruby/missing.h -include ruby.h")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fwrapv -fstack-protector -include ruby/config.h -include ruby/missing.h -include ruby.h")
 
 set(CMAKE_SHARED_LINKER_FLAGS "${ruby_link_flags}")
 set(CMAKE_EXE_LINKER_FLAGS "${ruby_link_flags}")
