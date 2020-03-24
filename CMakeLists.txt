@@ -10,7 +10,7 @@ include_directories(
 	${CMAKE_SOURCE_DIR}/src/libc/gen
 	${CMAKE_SOURCE_DIR}/src/CommonCrypto
 	${CMAKE_SOURCE_DIR}/src/ncurses/include
-	${CMAKE_SOURCE_DIR}/src/libffi/include
+	${CMAKE_SOURCE_DIR}/src/external/libffi/darwin/include
 	${CMAKE_SOURCE_DIR}/src/external/zlib
 	${CMAKE_SOURCE_DIR}/platform-include/sys
 	${CMAKE_SOURCE_DIR}/src/external/syslog/libsystem_asl.tproj/include
