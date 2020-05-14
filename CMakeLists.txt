@@ -5,15 +5,6 @@ include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/gen
 	${CMAKE_CURRENT_SOURCE_DIR}/ruby
 	${CMAKE_CURRENT_SOURCE_DIR}/ruby/include
-
-	${CMAKE_SOURCE_DIR}/platform-include
-	${CMAKE_SOURCE_DIR}/src/libc/gen
-	${CMAKE_SOURCE_DIR}/src/CommonCrypto
-	${CMAKE_SOURCE_DIR}/src/ncurses/include
-	${CMAKE_SOURCE_DIR}/src/external/libffi/darwin/include
-	${CMAKE_SOURCE_DIR}/src/external/zlib
-	${CMAKE_SOURCE_DIR}/platform-include/sys
-	${CMAKE_SOURCE_DIR}/src/external/syslog/libsystem_asl.tproj/include
 )
 
 add_definitions(
