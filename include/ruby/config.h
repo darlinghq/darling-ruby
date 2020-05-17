@@ -49,7 +49,7 @@
 #define SIZEOF_LONG_LONG 8
 #define SIZEOF___INT64 0
 #define SIZEOF_OFF_T 8
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__arm64__)
 #define SIZEOF_VOIDP 8
 #define SIZEOF_LONG 8
 #else
@@ -295,5 +295,7 @@
 #define RUBY_PLATFORM_CPU "x86_64"
 #elif defined(__i386__)
 #define RUBY_PLATFORM_CPU "i386"
+#elif defined(__arm64__)
+#define RUBY_PLATFORM_CPU "arm64"
 #endif
 #endif /* INCLUDE_RUBY_CONFIG_H */
