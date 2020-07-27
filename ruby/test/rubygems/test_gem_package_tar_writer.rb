@@ -1,5 +1,7 @@
+# frozen_string_literal: true
 require 'rubygems/package/tar_test_case'
 require 'rubygems/package/tar_writer'
+require 'minitest/mock'
 
 class TestGemPackageTarWriter < Gem::Package::TarTestCase
 
@@ -9,121 +11,182 @@ class TestGemPackageTarWriter < Gem::Package::TarTestCase
     @data = 'abcde12345'
     @io = TempIO.new
     @tar_writer = Gem::Package::TarWriter.new @io
+    @epoch = ENV["SOURCE_DATE_EPOCH"]
+    ENV["SOURCE_DATE_EPOCH"] = nil
   end
 
   def teardown
+    ENV["SOURCE_DATE_EPOCH"] = @epoch
     @tar_writer.close unless @tar_writer.closed?
+    @io.close!
 
     super
   end
 
   def test_add_file
-    @tar_writer.add_file 'x', 0644 do |f| f.write 'a' * 10 end
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.add_file 'x', 0644 do |f| f.write 'a' * 10 end
 
-    assert_headers_equal(tar_file_header('x', '', 0644, 10),
+      assert_headers_equal(tar_file_header('x', '', 0644, 10, Time.now),
                          @io.string[0, 512])
+    end
     assert_equal "aaaaaaaaaa#{"\0" * 502}", @io.string[512, 512]
     assert_equal 1024, @io.pos
   end
 
-  def test_add_file_digest
-    digest_algorithms = OpenSSL::Digest::SHA1, OpenSSL::Digest::SHA512
+  def test_add_file_source_date_epoch
+    ENV["SOURCE_DATE_EPOCH"] = "123456789"
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.mkdir 'foo', 0644
 
-    digests = @tar_writer.add_file_digest 'x', 0644, digest_algorithms do |io|
-      io.write 'a' * 10
+      assert_headers_equal tar_dir_header('foo', '', 0644, Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).utc),
+                           @io.string[0, 512]
     end
+  end
 
-    assert_equal '3495ff69d34671d1e15b33a63c1379fdedd3a32a',
-                 digests['SHA1'].hexdigest
-    assert_equal '4714870aff6c97ca09d135834fdb58a6389a50c1' \
-                 '1fef8ec4afef466fb60a23ac6b7a9c92658f14df' \
-                 '4993d6b40a4e4d8424196afc347e97640d68de61' \
-                 'e1cf14b0',
-                 digests['SHA512'].hexdigest
+  def test_add_symlink
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.add_symlink 'x', 'y', 0644
 
-    assert_headers_equal(tar_file_header('x', '', 0644, 10),
+      assert_headers_equal(tar_symlink_header('x', '', 0644, Time.now, 'y'),
                          @io.string[0, 512])
+    end
+    assert_equal 512, @io.pos
+  end
+
+  def test_add_symlink_source_date_epoch
+    ENV["SOURCE_DATE_EPOCH"] = "123456789"
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.add_symlink 'x', 'y', 0644
+
+      assert_headers_equal(tar_symlink_header('x', '', 0644, Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).utc, 'y'),
+                         @io.string[0, 512])
+    end
+  end
+
+  def test_add_file_digest
+    digest_algorithms = Digest::SHA1, Digest::SHA512
+
+    Time.stub :now, Time.at(1458518157) do
+      digests = @tar_writer.add_file_digest 'x', 0644, digest_algorithms do |io|
+        io.write 'a' * 10
+      end
+
+      assert_equal '3495ff69d34671d1e15b33a63c1379fdedd3a32a',
+                   digests['SHA1'].hexdigest
+      assert_equal '4714870aff6c97ca09d135834fdb58a6389a50c1' \
+                   '1fef8ec4afef466fb60a23ac6b7a9c92658f14df' \
+                   '4993d6b40a4e4d8424196afc347e97640d68de61' \
+                   'e1cf14b0',
+                   digests['SHA512'].hexdigest
+
+      assert_headers_equal(tar_file_header('x', '', 0644, 10, Time.now),
+                         @io.string[0, 512])
+    end
     assert_equal "aaaaaaaaaa#{"\0" * 502}", @io.string[512, 512]
     assert_equal 1024, @io.pos
   end
 
   def test_add_file_digest_multiple
-    digest_algorithms = [OpenSSL::Digest::SHA1, OpenSSL::Digest::SHA512]
+    digest_algorithms = [Digest::SHA1, Digest::SHA512]
 
-    digests = @tar_writer.add_file_digest 'x', 0644, digest_algorithms do |io|
-      io.write 'a' * 10
+    Time.stub :now, Time.at(1458518157) do
+      digests = @tar_writer.add_file_digest 'x', 0644, digest_algorithms do |io|
+        io.write 'a' * 10
+      end
+
+      assert_equal '3495ff69d34671d1e15b33a63c1379fdedd3a32a',
+                   digests['SHA1'].hexdigest
+      assert_equal '4714870aff6c97ca09d135834fdb58a6389a50c1' \
+                   '1fef8ec4afef466fb60a23ac6b7a9c92658f14df' \
+                   '4993d6b40a4e4d8424196afc347e97640d68de61' \
+                   'e1cf14b0',
+                   digests['SHA512'].hexdigest
+
+      assert_headers_equal(tar_file_header('x', '', 0644, 10, Time.now),
+                           @io.string[0, 512])
     end
-
-    assert_equal '3495ff69d34671d1e15b33a63c1379fdedd3a32a',
-                 digests['SHA1'].hexdigest
-    assert_equal '4714870aff6c97ca09d135834fdb58a6389a50c1' \
-                 '1fef8ec4afef466fb60a23ac6b7a9c92658f14df' \
-                 '4993d6b40a4e4d8424196afc347e97640d68de61' \
-                 'e1cf14b0',
-                 digests['SHA512'].hexdigest
-
-    assert_headers_equal(tar_file_header('x', '', 0644, 10),
-                         @io.string[0, 512])
     assert_equal "aaaaaaaaaa#{"\0" * 502}", @io.string[512, 512]
     assert_equal 1024, @io.pos
   end
 
   def test_add_file_signer
+    skip 'openssl is missing' unless defined?(OpenSSL::SSL)
+
     signer = Gem::Security::Signer.new PRIVATE_KEY, [PUBLIC_CERT]
 
-    @tar_writer.add_file_signed 'x', 0644, signer do |io|
-      io.write 'a' * 10
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.add_file_signed 'x', 0644, signer do |io|
+        io.write 'a' * 10
+      end
+
+      assert_headers_equal(tar_file_header('x', '', 0644, 10, Time.now),
+                           @io.string[0, 512])
+
+
+      assert_equal "aaaaaaaaaa#{"\0" * 502}", @io.string[512, 512]
+
+      digest = signer.digest_algorithm.new
+      digest.update 'a' * 10
+
+      signature = signer.sign digest.digest
+
+      assert_headers_equal(tar_file_header('x.sig', '', 0444, signature.length,
+                                           Time.now),
+                           @io.string[1024, 512])
+      assert_equal "#{signature}#{"\0" * (512 - signature.length)}",
+                   @io.string[1536, 512]
+
+      assert_equal 2048, @io.pos
     end
-
-    assert_headers_equal(tar_file_header('x', '', 0644, 10),
-                         @io.string[0, 512])
-    assert_equal "aaaaaaaaaa#{"\0" * 502}", @io.string[512, 512]
-
-    digest = signer.digest_algorithm.new
-    digest.update 'a' * 10
-
-    signature = signer.sign digest.digest
-
-    assert_headers_equal(tar_file_header('x.sig', '', 0444, signature.length),
-                         @io.string[1024, 512])
-    assert_equal "#{signature}#{"\0" * (512 - signature.length)}",
-                 @io.string[1536, 512]
-
-    assert_equal 2048, @io.pos
   end
 
   def test_add_file_signer_empty
     signer = Gem::Security::Signer.new nil, nil
 
-    @tar_writer.add_file_signed 'x', 0644, signer do |io|
-      io.write 'a' * 10
-    end
+    Time.stub :now, Time.at(1458518157) do
 
-    assert_headers_equal(tar_file_header('x', '', 0644, 10),
+      @tar_writer.add_file_signed 'x', 0644, signer do |io|
+        io.write 'a' * 10
+      end
+
+      assert_headers_equal(tar_file_header('x', '', 0644, 10, Time.now),
                          @io.string[0, 512])
+    end
     assert_equal "aaaaaaaaaa#{"\0" * 502}", @io.string[512, 512]
-
-    digest = signer.digest_algorithm.new
-    digest.update 'a' * 10
 
     assert_equal 1024, @io.pos
   end
 
   def test_add_file_simple
-    @tar_writer.add_file_simple 'x', 0644, 10 do |io| io.write "a" * 10 end
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.add_file_simple 'x', 0644, 10 do |io| io.write "a" * 10 end
 
-    assert_headers_equal(tar_file_header('x', '', 0644, 10),
+      assert_headers_equal(tar_file_header('x', '', 0644, 10, Time.now),
                          @io.string[0, 512])
+    end
 
     assert_equal "aaaaaaaaaa#{"\0" * 502}", @io.string[512, 512]
     assert_equal 1024, @io.pos
   end
 
-  def test_add_file_simple_padding
-    @tar_writer.add_file_simple 'x', 0, 100
+  def test_add_file_simple_source_date_epoch
+    ENV["SOURCE_DATE_EPOCH"] = "123456789"
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.add_file_simple 'x', 0644, 10 do |io| io.write "a" * 10 end
 
-    assert_headers_equal tar_file_header('x', '', 0, 100),
+      assert_headers_equal(tar_file_header('x', '', 0644, 10, Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).utc),
+                         @io.string[0, 512])
+    end
+  end
+
+  def test_add_file_simple_padding
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.add_file_simple 'x', 0, 100
+
+      assert_headers_equal tar_file_header('x', '', 0, 100, Time.now),
                          @io.string[0, 512]
+    end
 
     assert_equal "\0" * 512, @io.string[512, 512]
   end
@@ -141,12 +204,6 @@ class TestGemPackageTarWriter < Gem::Package::TarTestCase
       @tar_writer.add_file_simple("lib/foo/bar", 0, 10) do |io|
         io.write "1" * 11
       end
-    end
-  end
-
-  def test_add_file_unseekable
-    assert_raises Gem::Package::NonSeekableIO do
-      Gem::Package::TarWriter.new(Object.new).add_file 'x', 0
     end
   end
 
@@ -182,11 +239,24 @@ class TestGemPackageTarWriter < Gem::Package::TarTestCase
   end
 
   def test_mkdir
-    @tar_writer.mkdir 'foo', 0644
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.mkdir 'foo', 0644
 
-    assert_headers_equal tar_dir_header('foo', '', 0644),
-                         @io.string[0, 512]
-    assert_equal 512, @io.pos
+      assert_headers_equal tar_dir_header('foo', '', 0644, Time.now),
+                           @io.string[0, 512]
+
+      assert_equal 512, @io.pos
+    end
+  end
+
+  def test_mkdir_source_date_epoch
+    ENV["SOURCE_DATE_EPOCH"] = "123456789"
+    Time.stub :now, Time.at(1458518157) do
+      @tar_writer.mkdir 'foo', 0644
+
+      assert_headers_equal tar_dir_header('foo', '', 0644, Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).utc),
+                           @io.string[0, 512]
+    end
   end
 
   def test_split_name
@@ -195,33 +265,60 @@ class TestGemPackageTarWriter < Gem::Package::TarTestCase
 
     assert_equal ["#{'qwer/' * 19}bla", 'a' * 151],
                  @tar_writer.split_name("#{'a' * 151}/#{'qwer/' * 19}bla")
+    names = [
+      ([''] + ['123456789'] * 9 + ['1234567890']).join('/'),  # 101 bytes (several pieces)
+      (['123456789'] * 9 + ['1234567890'] + ['']).join('/'),  # 101 bytes (several pieces)
+      '/' * 99,
+      '/' * 100,
+      '/' * 101,
+      '/' * 102,
+    ]
+    names.each do |name|
+      newname, prefix = @tar_writer.split_name(name)
+      assert(!(newname.empty?), "split_name() returned empty name")
+      assert(newname.bytesize <= 100, "split_name() returned name longer than 100 bytes: '#{newname}' for '#{name}'")
+      assert(prefix.bytesize <= 155, "split_name() returned prefix longer than 155 bytes: '#{prefix}' for '#{name}'")
+      newname = [prefix, newname].join('/') unless prefix.empty?
+      assert_equal name, newname
+    end
   end
 
   def test_split_name_too_long_name
     name = File.join 'a', 'b' * 100
     assert_equal ['b' * 100, 'a'], @tar_writer.split_name(name)
 
-    assert_raises Gem::Package::TooLongFileName do
-      name = File.join 'a', 'b' * 101
+    name = File.join 'a', 'b' * 101
+    exception = assert_raises Gem::Package::TooLongFileName do
       @tar_writer.split_name name
     end
+    assert_includes exception.message, name
+
+    # note, GNU tar 1.28 is unable to handle this case too,
+    # tested with "tar --format=ustar -cPf /tmp/foo.tartar -- /aaaaaa....a"
+    name = '/'  + 'a' * 100
+    exception = assert_raises Gem::Package::TooLongFileName do
+      @tar_writer.split_name name
+    end
+    assert_includes exception.message, name
   end
 
   def test_split_name_too_long_prefix
     name = File.join 'a' * 155, 'b'
     assert_equal ['b', 'a' * 155], @tar_writer.split_name(name)
 
-    assert_raises Gem::Package::TooLongFileName do
-      name = File.join 'a' * 156, 'b'
+    name = File.join 'a' * 156, 'b'
+    exception = assert_raises Gem::Package::TooLongFileName do
       @tar_writer.split_name name
     end
+    assert_includes exception.message, name
   end
 
   def test_split_name_too_long_total
-    assert_raises Gem::Package::TooLongFileName do
-      @tar_writer.split_name 'a' * 257
+    name = 'a' * 257
+    exception = assert_raises Gem::Package::TooLongFileName do
+      @tar_writer.split_name name
     end
+    assert_includes exception.message, name
   end
 
 end
-

@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'rubygems/test_case'
 require 'rubygems/installer'
 
@@ -56,11 +57,6 @@ class Gem::Installer
   ##
   # Available through requiring rubygems/installer_test_case
 
-  attr_writer :spec
-
-  ##
-  # Available through requiring rubygems/installer_test_case
-
   attr_writer :wrappers
 end
 
@@ -76,7 +72,7 @@ class Gem::InstallerTestCase < Gem::TestCase
   #   a spec named 'a', intended for regular installs
   # @user_spec::
   #   a spec named 'b', intended for user installs
-
+  #
   # @gem::
   #   the path to a built gem from @spec
   # @user_spec::
@@ -106,16 +102,8 @@ class Gem::InstallerTestCase < Gem::TestCase
 
     @installer      = util_installer @spec, @gemhome
     @user_installer = util_installer @user_spec, Gem.user_dir, :user
-  end
 
-  def util_gem_bindir spec = @spec # :nodoc:
-    # TODO: deprecate
-    spec.bin_dir
-  end
-
-  def util_gem_dir spec = @spec # :nodoc:
-    # TODO: deprecate
-    spec.gem_dir
+    Gem::Installer.path_warning = false
   end
 
   ##
@@ -172,6 +160,8 @@ class Gem::InstallerTestCase < Gem::TestCase
         EOF
       end
 
+      yield @spec if block_given?
+
       use_ui ui do
         FileUtils.rm_f @gem
 
@@ -179,7 +169,7 @@ class Gem::InstallerTestCase < Gem::TestCase
       end
     end
 
-    @installer = Gem::Installer.new @gem
+    @installer = Gem::Installer.at @gem
   end
 
   ##
@@ -187,10 +177,9 @@ class Gem::InstallerTestCase < Gem::TestCase
   # +user+ is true a user-install will be performed.
 
   def util_installer(spec, gem_home, user=false)
-    Gem::Installer.new(spec.cache_file,
+    Gem::Installer.at(spec.cache_file,
                        :install_dir => gem_home,
                        :user_install => user)
   end
 
 end
-

@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'rubygems/command'
 require 'rubygems/version_option'
 require 'rubygems/rdoc'
@@ -45,8 +46,12 @@ class Gem::Commands::RdocCommand < Gem::Command
 
   def description # :nodoc:
     <<-DESC
-The rdoc command builds RDoc and RI documentation for installed gems.  Use
---overwrite to force rebuilding of documentation.
+The rdoc command builds documentation for installed gems.  By default
+only documentation is built using rdoc, but additional types of
+documentation may be built through rubygems plugins and the
+Gem.post_installs hook.
+
+Use --overwrite to force rebuilding of documentation.
     DESC
   end
 
@@ -55,7 +60,7 @@ The rdoc command builds RDoc and RI documentation for installed gems.  Use
   end
 
   def execute
-    specs = if options[:all] then
+    specs = if options[:all]
               Gem::Specification.to_a
             else
               get_all_gem_names.map do |name|
@@ -63,7 +68,7 @@ The rdoc command builds RDoc and RI documentation for installed gems.  Use
               end.flatten.uniq
             end
 
-    if specs.empty? then
+    if specs.empty?
       alert_error 'No matching gems found'
       terminate_interaction 1
     end
@@ -73,7 +78,7 @@ The rdoc command builds RDoc and RI documentation for installed gems.  Use
 
       doc.force = options[:overwrite]
 
-      if options[:overwrite] then
+      if options[:overwrite]
         FileUtils.rm_rf File.join(spec.doc_dir, 'ri')
         FileUtils.rm_rf File.join(spec.doc_dir, 'rdoc')
       end
@@ -89,4 +94,3 @@ The rdoc command builds RDoc and RI documentation for installed gems.  Use
   end
 
 end
-

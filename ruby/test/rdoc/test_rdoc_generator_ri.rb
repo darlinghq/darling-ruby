@@ -1,4 +1,5 @@
-require 'rdoc/test_case'
+# frozen_string_literal: true
+require 'minitest_helper'
 
 class TestRDocGeneratorRI < RDoc::TestCase
 
@@ -6,10 +7,8 @@ class TestRDocGeneratorRI < RDoc::TestCase
     super
 
     @options = RDoc::Options.new
-    if Object.const_defined? :Encoding then
-      @options.encoding = Encoding::UTF_8
-      @store.encoding = Encoding::UTF_8
-    end
+    @options.encoding = Encoding::UTF_8
+    @store.encoding = Encoding::UTF_8
 
     @tmpdir = File.join Dir.tmpdir, "test_rdoc_generator_ri_#{$$}"
     FileUtils.mkdir_p @tmpdir
@@ -42,14 +41,6 @@ class TestRDocGeneratorRI < RDoc::TestCase
     FileUtils.rm_rf @tmpdir
   end
 
-  def assert_file path
-    assert File.file?(path), "#{path} is not a file"
-  end
-
-  def refute_file path
-    refute File.exist?(path), "#{path} exists"
-  end
-
   def test_generate
     @g.generate
 
@@ -64,7 +55,7 @@ class TestRDocGeneratorRI < RDoc::TestCase
     store = RDoc::RI::Store.new @tmpdir
     store.load_cache
 
-    encoding = Object.const_defined?(:Encoding) ? Encoding::UTF_8 : nil
+    encoding = Encoding::UTF_8
 
     assert_equal encoding, store.encoding
   end
@@ -83,4 +74,3 @@ class TestRDocGeneratorRI < RDoc::TestCase
   end
 
 end
-

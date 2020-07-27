@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'rubygems/command'
 require 'rubygems/local_remote_options'
 require 'rubygems/version_option'
@@ -50,6 +51,22 @@ FIELD         name of gemspec field to show
     "--local --version '#{Gem::Requirement.default}' --yaml"
   end
 
+  def description # :nodoc:
+    <<-EOF
+The specification command allows you to extract the specification from
+a gem for examination.
+
+The specification can be output in YAML, ruby or Marshal formats.
+
+Specific fields in the specification can be extracted in YAML format:
+
+  $ gem spec rake summary
+  --- Ruby based make-like utility.
+  ...
+
+    EOF
+  end
+
   def usage # :nodoc:
     "#{program_name} [GEMFILE] [FIELD]"
   end
@@ -58,7 +75,7 @@ FIELD         name of gemspec field to show
     specs = []
     gem = options[:args].shift
 
-    unless gem then
+    unless gem
       raise Gem::CommandLineError,
             "Please specify a gem name or file on the command line"
     end
@@ -88,30 +105,30 @@ FIELD         name of gemspec field to show
     raise Gem::CommandLineError, "--ruby and FIELD are mutually exclusive" if
       field and options[:format] == :ruby
 
-    if local? then
-      if File.exist? gem then
+    if local?
+      if File.exist? gem
         specs << Gem::Package.new(gem).spec rescue nil
       end
 
-      if specs.empty? then
+      if specs.empty?
         specs.push(*dep.matching_specs)
       end
     end
 
-    if remote? then
+    if remote?
       dep.prerelease = options[:prerelease]
       found, _ = Gem::SpecFetcher.fetcher.spec_for_dependency dep
 
       specs.push(*found.map { |spec,| spec })
     end
 
-    if specs.empty? then
+    if specs.empty?
       alert_error "No gem matching '#{dep}' found"
       terminate_interaction 1
     end
 
-    unless options[:all] then
-      specs = [specs.sort_by { |s| s.version }.last]
+    unless options[:all]
+      specs = [specs.max_by { |s| s.version }]
     end
 
     specs.each do |s|

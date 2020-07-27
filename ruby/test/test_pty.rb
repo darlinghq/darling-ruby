@@ -1,5 +1,5 @@
+# frozen_string_literal: false
 require 'test/unit'
-require_relative 'ruby/envutil'
 require 'shellwords'
 require 'tmpdir'
 
@@ -18,13 +18,20 @@ class TestPTY < Test::Unit::TestCase
   else
     assert_equal("a\r\n", r.gets)
   ensure
+    r&.close
+    w&.close
     Process.wait pid if pid
   end
 
   def test_spawn_with_block
     PTY.spawn(RUBY, '-e', 'puts "b"') {|r,w,pid|
-      assert_equal("b\r\n", r.gets)
-      Process.wait(pid)
+      begin
+        assert_equal("b\r\n", r.gets)
+      ensure
+        r.close
+        w.close
+        Process.wait(pid)
+      end
     }
   rescue RuntimeError
     skip $!
@@ -33,8 +40,13 @@ class TestPTY < Test::Unit::TestCase
   def test_commandline
     commandline = Shellwords.join([RUBY, '-e', 'puts "foo"'])
     PTY.spawn(commandline) {|r,w,pid|
-      assert_equal("foo\r\n", r.gets)
-      Process.wait(pid)
+      begin
+        assert_equal("foo\r\n", r.gets)
+      ensure
+        r.close
+        w.close
+        Process.wait(pid)
+      end
     }
   rescue RuntimeError
     skip $!
@@ -42,8 +54,13 @@ class TestPTY < Test::Unit::TestCase
 
   def test_argv0
     PTY.spawn([RUBY, "argv0"], '-e', 'puts "bar"') {|r,w,pid|
-      assert_equal("bar\r\n", r.gets)
-      Process.wait(pid)
+      begin
+        assert_equal("bar\r\n", r.gets)
+      ensure
+        r.close
+        w.close
+        Process.wait(pid)
+      end
     }
   rescue RuntimeError
     skip $!
@@ -58,7 +75,7 @@ class TestPTY < Test::Unit::TestCase
     assert_equal(2, ret.length)
     assert_equal(IO, ret[0].class)
     assert_equal(File, ret[1].class)
-    master, slave = ret
+    _, slave = ret
     assert(slave.tty?)
     assert(File.chardev?(slave.path))
   ensure
@@ -77,7 +94,7 @@ class TestPTY < Test::Unit::TestCase
       assert_equal(2, ret.length)
       assert_equal(IO, ret[0].class)
       assert_equal(File, ret[1].class)
-      master, slave = ret
+      _, slave = ret
       assert(slave.tty?)
       assert(File.chardev?(slave.path))
       x
@@ -179,7 +196,6 @@ class TestPTY < Test::Unit::TestCase
   rescue RuntimeError
     skip $!
   else
-    assert_equal(pid, st1.pid) if st1
     assert_nil(st1)
     assert_equal(pid, st2.pid)
   end
@@ -198,7 +214,6 @@ class TestPTY < Test::Unit::TestCase
   rescue RuntimeError
     skip $!
   else
-    assert_equal(pid, st1.pid) if st1
     assert_nil(st1)
     assert_equal(pid, st2.pid)
   end
@@ -209,12 +224,16 @@ class TestPTY < Test::Unit::TestCase
       assert(s.close_on_exec?)
     }
     PTY.spawn(RUBY, '-e', '') {|r, w, pid|
-      assert(r.close_on_exec?)
-      assert(w.close_on_exec?)
-      Process.wait(pid)
+      begin
+        assert(r.close_on_exec?)
+        assert(w.close_on_exec?)
+      ensure
+        r.close
+        w.close
+        Process.wait(pid)
+      end
     }
   rescue RuntimeError
     skip $!
   end
 end if defined? PTY
-

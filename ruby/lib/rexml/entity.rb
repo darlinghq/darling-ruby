@@ -1,10 +1,9 @@
-require 'rexml/child'
-require 'rexml/source'
-require 'rexml/xmltokens'
+# frozen_string_literal: false
+require_relative 'child'
+require_relative 'source'
+require_relative 'xmltokens'
 
 module REXML
-  # God, I hate DTDs.  I really do.  Why this idiot standard still
-  # plagues us is beyond me.
   class Entity < Child
     include XMLTokens
     PUBIDCHAR = "\x20\x0D\x0Aa-zA-Z0-9\\-()+,./:=?;!*@$_%#"
@@ -28,8 +27,7 @@ module REXML
     # the constructor with the entity definition, or use the accessor methods.
     # +WARNING+: There is no validation of entity state except when the entity
     # is read from a stream.  If you start poking around with the accessors,
-    # you can easily create a non-conformant Entity.  The best thing to do is
-    # dump the stupid DTDs and use XMLSchema instead.
+    # you can easily create a non-conformant Entity.
     #
     #  e = Entity.new( 'amp', '&' )
     def initialize stream, value=nil, parent=nil, reference=false
@@ -63,7 +61,7 @@ module REXML
       end
     end
 
-    # Evaluates whether the given string matchs an entity definition,
+    # Evaluates whether the given string matches an entity definition,
     # returning true if so, and false otherwise.
     def Entity::matches? string
       (ENTITYDECL =~ string) == 0
@@ -141,7 +139,7 @@ module REXML
           sum = 0
           matches.each do |entity_reference|
             entity_value = @parent.entity( entity_reference[0] )
-            if sum + entity_value.bytesize > Document.entity_expansion_text_limit
+            if sum + entity_value.bytesize > Security.entity_expansion_text_limit
               raise "entity expansion has grown too large"
             else
               sum += entity_value.bytesize

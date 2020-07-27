@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'rubygems/installer_test_case'
 require 'rubygems/install_update_options'
 require 'rubygems/command'
@@ -17,18 +18,27 @@ class TestGemInstallUpdateOptions < Gem::InstallerTestCase
   def test_add_install_update_options
     args = %w[
       --document
+      --build-root build_root
       --format-exec
       --ignore-dependencies
-      --rdoc
-      --ri
+      --document
       -E
-      -P HighSecurity
       -f
       -i /install_to
       -w
+      --vendor
+      --post-install-message
     ]
 
+    args.concat %w[-P HighSecurity] if defined?(OpenSSL::SSL)
+
     assert @cmd.handles?(args)
+  end
+
+  def test_build_root
+    @cmd.handle_options %w[--build-root build_root]
+
+    assert_equal File.expand_path('build_root'), @cmd.options[:build_root]
   end
 
   def test_doc
@@ -81,36 +91,23 @@ class TestGemInstallUpdateOptions < Gem::InstallerTestCase
     assert_equal %w[ri], @cmd.options[:document]
   end
 
-  def test_rdoc
-    @cmd.handle_options %w[--rdoc]
-
-    assert_equal %w[rdoc ri], @cmd.options[:document].sort
-  end
-
-  def test_rdoc_no
-    @cmd.handle_options %w[--no-rdoc]
-
-    assert_equal %w[ri], @cmd.options[:document]
-  end
-
-  def test_ri
-    @cmd.handle_options %w[--no-ri]
-
-    assert_equal %w[], @cmd.options[:document]
-  end
-
   def test_security_policy
+    skip 'openssl is missing' unless defined?(OpenSSL::SSL)
+
     @cmd.handle_options %w[-P HighSecurity]
 
     assert_equal Gem::Security::HighSecurity, @cmd.options[:security_policy]
   end
 
   def test_security_policy_unknown
+    skip 'openssl is missing' unless defined?(OpenSSL::SSL)
+
     @cmd.add_install_update_options
 
-    assert_raises OptionParser::InvalidArgument do
+    e = assert_raises OptionParser::InvalidArgument do
       @cmd.handle_options %w[-P UnknownSecurity]
     end
+    assert_includes e.message, "UnknownSecurity"
   end
 
   def test_user_install_enabled
@@ -118,7 +115,7 @@ class TestGemInstallUpdateOptions < Gem::InstallerTestCase
 
     assert @cmd.options[:user_install]
 
-    @installer = Gem::Installer.new @gem, @cmd.options
+    @installer = Gem::Installer.at @gem, @cmd.options
     @installer.install
     assert_path_exists File.join(Gem.user_dir, 'gems')
     assert_path_exists File.join(Gem.user_dir, 'gems', @spec.full_name)
@@ -127,6 +124,8 @@ class TestGemInstallUpdateOptions < Gem::InstallerTestCase
   def test_user_install_disabled_read_only
     if win_platform?
       skip('test_user_install_disabled_read_only test skipped on MS Windows')
+    elsif Process.uid.zero?
+      skip('test_user_install_disabled_read_only test skipped in root privilege')
     else
       @cmd.handle_options %w[--no-user-install]
 
@@ -138,10 +137,47 @@ class TestGemInstallUpdateOptions < Gem::InstallerTestCase
       Gem.use_paths @gemhome, @userhome
 
       assert_raises(Gem::FilePermissionError) do
-        Gem::Installer.new(@gem, @cmd.options).install
+        Gem::Installer.at(@gem, @cmd.options).install
       end
     end
   ensure
     FileUtils.chmod 0755, @gemhome
+  end
+
+  def test_vendor
+    @cmd.handle_options %w[--vendor]
+
+    assert @cmd.options[:vendor]
+    assert_equal Gem.vendor_dir, @cmd.options[:install_dir]
+  end
+
+  def test_vendor_missing
+    orig_vendordir = RbConfig::CONFIG['vendordir']
+    RbConfig::CONFIG.delete 'vendordir'
+
+    e = assert_raises OptionParser::InvalidOption do
+      @cmd.handle_options %w[--vendor]
+    end
+
+    assert_equal 'invalid option: --vendor your platform is not supported',
+                 e.message
+
+    refute @cmd.options[:vendor]
+    refute @cmd.options[:install_dir]
+
+  ensure
+    RbConfig::CONFIG['vendordir'] = orig_vendordir
+  end
+
+  def test_post_install_message_no
+    @cmd.handle_options %w[--no-post-install-message]
+
+    assert_equal false, @cmd.options[:post_install_message]
+  end
+
+  def test_post_install_message
+    @cmd.handle_options %w[--post-install-message]
+
+    assert_equal true, @cmd.options[:post_install_message]
   end
 end

@@ -1,3 +1,4 @@
+# frozen_string_literal: false
 require 'optparse'
 require 'erb'
 
@@ -56,17 +57,12 @@ DEFS = h.to_a
 
 def each_const
   DEFS.each {|name, default_value|
-    if name =~ /\AINADDR_/
-      make_value = "UINT2NUM"
-    else
-      make_value = "INT2NUM"
-    end
     guard = nil
     if /\A(AF_INET6|PF_INET6|IPV6_.*)\z/ =~ name
-      # IPv6 is not supported although AF_INET6 is defined on bcc32/mingw
+      # IPv6 is not supported although AF_INET6 is defined on mingw
       guard = "defined(INET6)"
     end
-    yield guard, make_value, name, default_value
+    yield guard, name, default_value
   }
 end
 
@@ -77,8 +73,16 @@ def each_name(pat)
   }
 end
 
-ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_const_decls")
-% each_const {|guard, make_value, name, default_value|
+erb_new = lambda do |src, safe, trim|
+  if ERB.instance_method(:initialize).parameters.assoc(:key) # Ruby 2.6+
+    ERB.new(src, trim_mode: trim)
+  else
+    ERB.new(src, safe, trim)
+  end
+end
+
+erb_new.call(<<'EOS', nil, '%').def_method(Object, "gen_const_decls")
+% each_const {|guard, name, default_value|
 #if !defined(<%=name%>)
 # if defined(HAVE_CONST_<%=name.upcase%>)
 #  define <%=name%> <%=name%>
@@ -91,23 +95,23 @@ ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_const_decls")
 % }
 EOS
 
-ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_const_defs_in_guard(make_value, name, default_value)")
+erb_new.call(<<'EOS', nil, '%').def_method(Object, "gen_const_defs_in_guard(name, default_value)")
 #if defined(<%=name%>)
     /* <%= COMMENTS[name] %> */
-    rb_define_const(rb_cSocket, <%=c_str name%>, <%=make_value%>(<%=name%>));
+    rb_define_const(rb_cSocket, <%=c_str name%>, INTEGER2NUM(<%=name%>));
     /* <%= COMMENTS[name] %> */
-    rb_define_const(rb_mSockConst, <%=c_str name%>, <%=make_value%>(<%=name%>));
+    rb_define_const(rb_mSockConst, <%=c_str name%>, INTEGER2NUM(<%=name%>));
 #endif
 EOS
 
-ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_const_defs")
-% each_const {|guard, make_value, name, default_value|
+erb_new.call(<<'EOS', nil, '%').def_method(Object, "gen_const_defs")
+% each_const {|guard, name, default_value|
 %   if guard
 #if <%=guard%>
-<%= gen_const_defs_in_guard(make_value, name, default_value).chomp %>
+<%= gen_const_defs_in_guard(name, default_value).chomp %>
 #endif
 %   else
-<%= gen_const_defs_in_guard(make_value, name, default_value).chomp %>
+<%= gen_const_defs_in_guard(name, default_value).chomp %>
 %   end
 % }
 EOS
@@ -150,7 +154,7 @@ def each_names_with_len(pat, prefix_optional=nil)
   }
 end
 
-ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_name_to_int_decl(funcname, pat, prefix_optional, guard=nil)")
+erb_new.call(<<'EOS', nil, '%').def_method(Object, "gen_name_to_int_decl(funcname, pat, prefix_optional, guard=nil)")
 %if guard
 #ifdef <%=guard%>
 int <%=funcname%>(const char *str, long len, int *valp);
@@ -160,7 +164,7 @@ int <%=funcname%>(const char *str, long len, int *valp);
 %end
 EOS
 
-ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_name_to_int_func_in_guard(funcname, pat, prefix_optional, guard=nil)")
+erb_new.call(<<'EOS', nil, '%').def_method(Object, "gen_name_to_int_func_in_guard(funcname, pat, prefix_optional, guard=nil)")
 int
 <%=funcname%>(const char *str, long len, int *valp)
 {
@@ -181,7 +185,7 @@ int
 }
 EOS
 
-ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_name_to_int_func(funcname, pat, prefix_optional, guard=nil)")
+erb_new.call(<<'EOS', nil, '%').def_method(Object, "gen_name_to_int_func(funcname, pat, prefix_optional, guard=nil)")
 %if guard
 #ifdef <%=guard%>
 <%=gen_name_to_int_func_in_guard(funcname, pat, prefix_optional, guard)%>
@@ -210,7 +214,7 @@ def reverse_each_name_with_prefix_optional(pat, prefix_pat)
   end
 end
 
-ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_int_to_name_hash(hash_var, pat, prefix_pat)")
+erb_new.call(<<'EOS', nil, '%').def_method(Object, "gen_int_to_name_hash(hash_var, pat, prefix_pat)")
     <%=hash_var%> = st_init_numtable();
 % reverse_each_name_with_prefix_optional(pat, prefix_pat) {|n,s|
 #ifdef <%=n%>
@@ -219,7 +223,7 @@ ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_int_to_name_hash(hash_var, pa
 % }
 EOS
 
-ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_int_to_name_func(func_name, hash_var)")
+erb_new.call(<<'EOS', nil, '%').def_method(Object, "gen_int_to_name_func(func_name, hash_var)")
 ID
 <%=func_name%>(int val)
 {
@@ -230,7 +234,7 @@ ID
 }
 EOS
 
-ERB.new(<<'EOS', nil, '%').def_method(Object, "gen_int_to_name_decl(func_name, hash_var)")
+erb_new.call(<<'EOS', nil, '%').def_method(Object, "gen_int_to_name_decl(func_name, hash_var)")
 ID <%=func_name%>(int val);
 EOS
 
@@ -279,10 +283,22 @@ def_intern('rsock_intern_udp_optname',  /\AUDP_/, "UDP_")
 def_intern('rsock_intern_scm_optname',  /\ASCM_/, "SCM_")
 def_intern('rsock_intern_local_optname',  /\ALOCAL_/, "LOCAL_")
 
-result = ERB.new(<<'EOS', nil, '%').result(binding)
+result = erb_new.call(<<'EOS', nil, '%').result(binding)
 /* autogenerated file */
 
 <%= INTERN_DEFS.map {|vardef, gen_hash, decl, func| vardef }.join("\n") %>
+
+#ifdef HAVE_LONG_LONG
+#define INTEGER2NUM(n) \
+    (FIXNUM_MAX < (n) ? ULL2NUM(n) : \
+     FIXNUM_MIN > (LONG_LONG)(n) ? LL2NUM(n) : \
+     LONG2FIX(n))
+#else
+#define INTEGER2NUM(n) \
+    (FIXNUM_MAX < (n) ? ULONG2NUM(n) : \
+     FIXNUM_MIN > (long)(n) ? LONG2NUM(n) : \
+     LONG2FIX(n))
+#endif
 
 static void
 init_constants(void)
@@ -310,7 +326,7 @@ init_constants(void)
 
 EOS
 
-header_result = ERB.new(<<'EOS', nil, '%').result(binding)
+header_result = erb_new.call(<<'EOS', nil, '%').result(binding)
 /* autogenerated file */
 <%= gen_const_decls %>
 <%= NAME_TO_INT_DEFS.map {|decl, func| decl }.join("\n") %>
@@ -446,6 +462,7 @@ MSG_RST
 MSG_ERRQUEUE	nil	Fetch message from error queue
 MSG_NOSIGNAL	nil	Do not generate SIGPIPE
 MSG_MORE	nil	Sender will send more
+MSG_FASTOPEN nil Reduce step of the handshake process
 
 SOL_SOCKET	nil	Socket-level options
 SOL_IP	nil	IP socket options
@@ -532,6 +549,7 @@ IP_FREEBIND	nil	Allow binding to nonexistent IP addresses
 IP_IPSEC_POLICY	nil	IPsec security policy
 IP_XFRM_POLICY
 IP_PASSSEC	nil	Retrieve security context with datagram
+IP_TRANSPARENT  nil     Transparent proxy
 IP_PMTUDISC_DONT	nil	Never send DF frames
 IP_PMTUDISC_WANT	nil	Use per-route hints
 IP_PMTUDISC_DO	nil	Always send DF frames
@@ -560,6 +578,8 @@ SO_DONTROUTE	nil	Use interface addresses
 SO_BROADCAST	nil	Permit sending of broadcast messages
 SO_SNDBUF	nil	Send buffer size
 SO_RCVBUF	nil	Receive buffer size
+SO_SNDBUFFORCE  nil     Send buffer size without wmem_max limit (Linux 2.6.14)
+SO_RCVBUFFORCE  nil     Receive buffer size without rmem_max limit (Linux 2.6.14)
 SO_KEEPALIVE	nil	Keep connections alive
 SO_OOBINLINE	nil	Leave received out-of-band data in-line
 SO_NO_CHECK	nil	Disable checksums
@@ -586,6 +606,7 @@ SO_SECURITY_ENCRYPTION_NETWORK
 SO_BINDTODEVICE	nil	Only send packets from the given interface
 SO_ATTACH_FILTER	nil	Attach an accept filter
 SO_DETACH_FILTER	nil	Detach an accept filter
+SO_GET_FILTER   nil     Obtain filter set by SO_ATTACH_FILTER (Linux 3.8)
 SO_PEERNAME	nil	Name of the connecting user
 SO_TIMESTAMP	nil	Receive timestamp with datagrams (timeval)
 SO_TIMESTAMPNS	nil	Receive nanosecond timestamp with datagrams (timespec)
@@ -593,6 +614,21 @@ SO_BINTIME	nil	Receive timestamp with datagrams (bintime)
 SO_RECVUCRED	nil	Receive user credentials with datagram
 SO_MAC_EXEMPT	nil	Mandatory Access Control exemption for unlabeled peers
 SO_ALLZONES	nil	Bypass zone boundaries
+SO_PEERSEC      nil     Obtain the security credentials (Linux 2.6.2)
+SO_PASSSEC      nil     Toggle security context passing (Linux 2.6.18)
+SO_MARK         nil     Set the mark for mark-based routing (Linux 2.6.25)
+SO_TIMESTAMPING nil     Time stamping of incoming and outgoing packets (Linux 2.6.30)
+SO_PROTOCOL     nil     Protocol given for socket() (Linux 2.6.32)
+SO_DOMAIN       nil     Domain given for socket() (Linux 2.6.32)
+SO_RXQ_OVFL     nil     Toggle cmsg for number of packets dropped (Linux 2.6.33)
+SO_WIFI_STATUS  nil     Toggle cmsg for wifi status (Linux 3.3)
+SO_PEEK_OFF     nil     Set the peek offset (Linux 3.4)
+SO_NOFCS        nil     Set netns of a socket (Linux 3.4)
+SO_LOCK_FILTER  nil     Lock the filter attached to a socket (Linux 3.9)
+SO_SELECT_ERR_QUEUE     nil     Make select() detect socket error queue with errorfds (Linux 3.10)
+SO_BUSY_POLL    nil     Set the threshold in microseconds for low latency polling (Linux 3.11)
+SO_MAX_PACING_RATE      nil     Cap the rate computed by transport layer. [bytes per second] (Linux 3.13)
+SO_BPF_EXTENSIONS       nil     Query supported BPF extensions (Linux 3.14)
 
 SOPRI_INTERACTIVE	nil	Interactive socket priority
 SOPRI_NORMAL	nil	Normal socket priority
@@ -602,21 +638,32 @@ IPX_TYPE
 
 TCP_NODELAY	nil	Don't delay sending to coalesce packets
 TCP_MAXSEG	nil	Set maximum segment size
-TCP_CORK	nil	Don't send partial frames
-TCP_DEFER_ACCEPT	nil	Don't notify a listening socket until data is ready
-TCP_INFO	nil	Retrieve information about this socket
-TCP_KEEPCNT	nil	Maximum number of keepalive probes allowed before dropping a connection
-TCP_KEEPIDLE	nil	Idle time before keepalive probes are sent
-TCP_KEEPINTVL	nil	Time between keepalive probes
-TCP_LINGER2	nil	Lifetime of orphaned FIN_WAIT2 sockets
-TCP_MD5SIG	nil	Use MD5 digests (RFC2385)
+TCP_CORK	nil	Don't send partial frames (Linux 2.2, glibc 2.2)
+TCP_DEFER_ACCEPT	nil	Don't notify a listening socket until data is ready (Linux 2.4, glibc 2.2)
+TCP_INFO	nil	Retrieve information about this socket (Linux 2.4, glibc 2.2)
+TCP_KEEPCNT	nil	Maximum number of keepalive probes allowed before dropping a connection (Linux 2.4, glibc 2.2)
+TCP_KEEPIDLE	nil	Idle time before keepalive probes are sent (Linux 2.4, glibc 2.2)
+TCP_KEEPINTVL	nil	Time between keepalive probes (Linux 2.4, glibc 2.2)
+TCP_LINGER2	nil	Lifetime of orphaned FIN_WAIT2 sockets (Linux 2.4, glibc 2.2)
+TCP_MD5SIG	nil	Use MD5 digests (RFC2385, Linux 2.6.20, glibc 2.7)
 TCP_NOOPT	nil	Don't use TCP options
 TCP_NOPUSH	nil	Don't push the last block of write
-TCP_QUICKACK	nil	Enable quickack mode
-TCP_SYNCNT	nil	Number of SYN retransmits before a connection is dropped
-TCP_WINDOW_CLAMP	nil	Clamp the size of the advertised window
+TCP_QUICKACK	nil	Enable quickack mode (Linux 2.4.4, glibc 2.3)
+TCP_SYNCNT	nil	Number of SYN retransmits before a connection is dropped (Linux 2.4, glibc 2.2)
+TCP_WINDOW_CLAMP	nil	Clamp the size of the advertised window (Linux 2.4, glibc 2.2)
+TCP_FASTOPEN nil Reduce step of the handshake process (Linux 3.7, glibc 2.18)
+TCP_CONGESTION  nil     TCP congestion control algorithm (Linux 2.6.13, glibc 2.6)
+TCP_COOKIE_TRANSACTIONS nil     TCP Cookie Transactions (Linux 2.6.33, glibc 2.18)
+TCP_QUEUE_SEQ   nil     Sequence of a queue for repair mode (Linux 3.5, glibc 2.18)
+TCP_REPAIR      nil     Repair mode (Linux 3.5, glibc 2.18)
+TCP_REPAIR_OPTIONS      nil     Options for repair mode (Linux 3.5, glibc 2.18)
+TCP_REPAIR_QUEUE        nil     Queue for repair mode (Linux 3.5, glibc 2.18)
+TCP_THIN_DUPACK nil     Duplicated acknowledgments handling for thin-streams (Linux 2.6.34, glibc 2.18)
+TCP_THIN_LINEAR_TIMEOUTS        nil     Linear timeouts for thin-streams (Linux 2.6.34, glibc 2.18)
+TCP_TIMESTAMP   nil     TCP timestamp (Linux 3.9, glibc 2.18)
+TCP_USER_TIMEOUT        nil     Max timeout before a TCP connection is aborted (Linux 2.6.37, glibc 2.18)
 
-UDP_CORK	nil	Don't send partial frames
+UDP_CORK	nil	Don't send partial frames (Linux 2.5.44, glibc 2.11)
 
 EAI_ADDRFAMILY	nil	Address family for hostname not supported
 EAI_AGAIN	nil	Temporary failure in name resolution
@@ -695,11 +742,72 @@ SOMAXCONN	5	Maximum connection requests that may be queued for a socket
 SCM_RIGHTS	nil	Access rights
 SCM_TIMESTAMP	nil	Timestamp (timeval)
 SCM_TIMESTAMPNS	nil	Timespec (timespec)
+SCM_TIMESTAMPING        nil     Timestamp (timespec list) (Linux 2.6.30)
 SCM_BINTIME	nil	Timestamp (bintime)
 SCM_CREDENTIALS	nil	The sender's credentials
 SCM_CREDS	nil	Process credentials
 SCM_UCRED	nil	User credentials
+SCM_WIFI_STATUS nil     Wifi status (Linux 3.3)
 
 LOCAL_PEERCRED	nil	Retrieve peer credentials
 LOCAL_CREDS	nil	Pass credentials to receiver
 LOCAL_CONNWAIT	nil	Connect blocks until accepted
+
+IFF_802_1Q_VLAN      nil 802.1Q VLAN device
+IFF_ALLMULTI         nil receive all multicast packets
+IFF_ALTPHYS          nil use alternate physical connection
+IFF_AUTOMEDIA        nil auto media select active
+IFF_BONDING          nil bonding master or slave
+IFF_BRIDGE_PORT      nil device used as bridge port
+IFF_BROADCAST        nil broadcast address valid
+IFF_CANTCONFIG       nil unconfigurable using ioctl(2)
+IFF_DEBUG            nil turn on debugging
+IFF_DISABLE_NETPOLL  nil disable netpoll at run-time
+IFF_DONT_BRIDGE      nil disallow bridging this ether dev
+IFF_DORMANT          nil driver signals dormant
+IFF_DRV_OACTIVE      nil tx hardware queue is full
+IFF_DRV_RUNNING      nil resources allocated
+IFF_DYING            nil interface is winding down
+IFF_DYNAMIC          nil dialup device with changing addresses
+IFF_EBRIDGE          nil ethernet bridging device
+IFF_ECHO             nil echo sent packets
+IFF_ISATAP           nil ISATAP interface (RFC4214)
+IFF_LINK0            nil per link layer defined bit 0
+IFF_LINK1            nil per link layer defined bit 1
+IFF_LINK2            nil per link layer defined bit 2
+IFF_LIVE_ADDR_CHANGE nil hardware address change when it's running
+IFF_LOOPBACK         nil loopback net
+IFF_LOWER_UP         nil driver signals L1 up
+IFF_MACVLAN_PORT     nil device used as macvlan port
+IFF_MASTER           nil master of a load balancer
+IFF_MASTER_8023AD    nil bonding master, 802.3ad.
+IFF_MASTER_ALB       nil bonding master, balance-alb.
+IFF_MASTER_ARPMON    nil bonding master, ARP mon in use
+IFF_MONITOR          nil user-requested monitor mode
+IFF_MULTICAST        nil supports multicast
+IFF_NOARP            nil no address resolution protocol
+IFF_NOTRAILERS       nil avoid use of trailers
+IFF_OACTIVE          nil transmission in progress
+IFF_OVS_DATAPATH     nil device used as Open vSwitch datapath port
+IFF_POINTOPOINT      nil point-to-point link
+IFF_PORTSEL          nil can set media type
+IFF_PPROMISC         nil user-requested promisc mode
+IFF_PROMISC          nil receive all packets
+IFF_RENAMING         nil interface is being renamed
+IFF_ROUTE            nil routing entry installed
+IFF_RUNNING          nil resources allocated
+IFF_SIMPLEX          nil can't hear own transmissions
+IFF_SLAVE            nil slave of a load balancer
+IFF_SLAVE_INACTIVE   nil bonding slave not the curr. active
+IFF_SLAVE_NEEDARP    nil need ARPs for validation
+IFF_SMART            nil interface manages own routes
+IFF_STATICARP        nil static ARP
+IFF_SUPP_NOFCS       nil sending custom FCS
+IFF_TEAM_PORT        nil used as team port
+IFF_TX_SKB_SHARING   nil sharing skbs on transmit
+IFF_UNICAST_FLT      nil unicast filtering
+IFF_UP               nil interface is up
+IFF_WAN_HDLC         nil WAN HDLC device
+IFF_XMIT_DST_RELEASE nil dev_hard_start_xmit() is allowed to release skb->dst
+IFF_VOLATILE         nil volatile flags
+IFF_CANTCHANGE       nil flags not changeable

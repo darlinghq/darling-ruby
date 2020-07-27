@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'rubygems/test_case'
 require 'rubygems/dependency_list'
 
@@ -10,18 +11,18 @@ class TestGemDependencyList < Gem::TestCase
 
     @deplist = Gem::DependencyList.new
 
-    # TODO: switch to new_spec
-    @a1 = quick_spec 'a', '1'
-    @a2 = quick_spec 'a', '2'
-    @a3 = quick_spec 'a', '3'
+    # TODO: switch to util_spec
+    @a1 = util_spec 'a', '1'
+    @a2 = util_spec 'a', '2'
+    @a3 = util_spec 'a', '3'
 
-    @b1 = quick_spec 'b', '1' do |s| s.add_dependency 'a', '>= 1' end
-    @b2 = quick_spec 'b', '2' do |s| s.add_dependency 'a', '>= 1' end
+    @b1 = util_spec 'b', '1' do |s| s.add_dependency 'a', '>= 1' end
+    @b2 = util_spec 'b', '2' do |s| s.add_dependency 'a', '>= 1' end
 
-    @c1 = quick_spec 'c', '1' do |s| s.add_dependency 'b', '>= 1' end
-    @c2 = quick_spec 'c', '2'
+    @c1 = util_spec 'c', '1' do |s| s.add_dependency 'b', '>= 1' end
+    @c2 = util_spec 'c', '2'
 
-    @d1 = quick_spec 'd', '1' do |s| s.add_dependency 'c', '>= 1' end
+    @d1 = util_spec 'd', '1' do |s| s.add_dependency 'c', '>= 1' end
   end
 
   def test_active_count
@@ -57,9 +58,9 @@ class TestGemDependencyList < Gem::TestCase
   end
 
   def test_dependency_order_development
-    e1 = quick_spec 'e', '1'
-    f1 = quick_spec 'f', '1'
-    g1 = quick_spec 'g', '1'
+    e1 = util_spec 'e', '1'
+    f1 = util_spec 'f', '1'
+    g1 = util_spec 'g', '1'
 
     @a1.add_dependency 'e'
     @a1.add_dependency 'f'
@@ -85,7 +86,7 @@ class TestGemDependencyList < Gem::TestCase
 
   def test_dependency_order_diamond
     util_diamond
-    e1 = quick_spec 'e', '1'
+    e1 = util_spec 'e', '1'
     @deplist.add e1
     @a1.add_dependency 'e', '>= 1'
 
@@ -135,21 +136,21 @@ class TestGemDependencyList < Gem::TestCase
 
     exp = {
       "b" => [
-              Gem::Dependency.new("a", ">= 1")
-             ]
+        Gem::Dependency.new("a", ">= 1")
+      ]
     }
 
     assert_equal exp, @deplist.why_not_ok?
   end
 
   def test_why_not_ok_eh_old_dependency
-    a  = new_spec 'a', '1',
+    a  = util_spec 'a', '1',
                   'b' => '~> 1.0'
 
-    b0 = new_spec 'b', '1.0',
+    b0 = util_spec 'b', '1.0',
                   'd' => '>= 0'
 
-    b1 = new_spec 'b', '1.1'
+    b1 = util_spec 'b', '1.1'
 
     util_clear_gems
 
@@ -161,13 +162,13 @@ class TestGemDependencyList < Gem::TestCase
   end
 
   def test_ok_eh_mismatch
-    a1 = quick_spec 'a', '1'
-    a2 = quick_spec 'a', '2'
+    a1 = util_spec 'a', '1'
+    a2 = util_spec 'a', '2'
 
-    b = quick_spec 'b', '1' do |s| s.add_dependency 'a', '= 1' end
-    c = quick_spec 'c', '1' do |s| s.add_dependency 'a', '= 2' end
+    b = util_spec 'b', '1' do |s| s.add_dependency 'a', '= 1' end
+    c = util_spec 'c', '1' do |s| s.add_dependency 'a', '= 2' end
 
-    d = quick_spec 'd', '1' do |s|
+    d = util_spec 'd', '1' do |s|
       s.add_dependency 'b'
       s.add_dependency 'c'
     end
@@ -256,4 +257,3 @@ class TestGemDependencyList < Gem::TestCase
   end
 
 end
-

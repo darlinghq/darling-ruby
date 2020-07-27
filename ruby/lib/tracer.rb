@@ -1,7 +1,7 @@
+# frozen_string_literal: false
 #--
 # $Release Version: 0.3$
 # $Revision: 1.12 $
-require "thread"
 
 ##
 # Outputs a source level execution trace of a Ruby program.
@@ -12,7 +12,7 @@ require "thread"
 #
 # == Example
 #
-# Consider the following ruby script
+# Consider the following Ruby script
 #
 #   class A
 #     def square(a)
@@ -60,6 +60,7 @@ require "thread"
 # by Keiju ISHITSUKA(keiju@ishitsuka.com)
 #
 class Tracer
+
   class << self
     # display additional debug information (defaults to false)
     attr_accessor :verbose
@@ -90,7 +91,7 @@ class Tracer
   Tracer::display_thread_id = true
   Tracer::display_c_call = false
 
-  @stdout_mutex = Mutex.new
+  @stdout_mutex = Thread::Mutex.new
 
   # Symbol table used for displaying trace information
   EVENT_SYMBOL = {
@@ -155,16 +156,8 @@ class Tracer
     end
 
     unless list = SCRIPT_LINES__[file]
-      begin
-        f = File::open(file)
-        begin
-          SCRIPT_LINES__[file] = list = f.readlines
-        ensure
-          f.close
-        end
-      rescue
-        SCRIPT_LINES__[file] = list = []
-      end
+      list = File.readlines(file) rescue []
+      SCRIPT_LINES__[file] = list
     end
 
     if l = list[line - 1]

@@ -1,8 +1,9 @@
 # -*- coding: us-ascii; mode: ruby; ruby-indent-level: 4; tab-width: 4 -*-
+# frozen_string_literal: true
 #												vim:sw=4:ts=4
 # $Id$
 #
-require 'psych/helper'
+require_relative 'helper'
 require 'ostruct'
 
 # [ruby-core:01946]
@@ -25,6 +26,10 @@ class Psych_Unit_Tests < Psych::TestCase
       time = Time.utc(2010, 10, 10)
       yaml = Psych.dump time
       assert_match "2010-10-10 00:00:00.000000000 Z", yaml
+    end
+
+    def test_multiline_regexp
+        assert_cycle(Regexp.new("foo\nbar"))
     end
 
     # [ruby-core:34969]
@@ -250,7 +255,6 @@ EOY
 
 	def test_spec_mapping_between_sequences
 		# Complex key #1
-		dj = Date.new( 2001, 7, 23 )
 		assert_parse_only(
 			{ [ 'Detroit Tigers', 'Chicago Cubs' ] => [ Date.new( 2001, 7, 23 ) ],
 			  [ 'New York Yankees', 'Atlanta Braves' ] => [ Date.new( 2001, 7, 2 ), Date.new( 2001, 8, 12 ), Date.new( 2001, 8, 14 ) ] }, <<EOY
@@ -508,7 +512,7 @@ EOY
 
 	def test_spec_log_file
 		doc_ct = 0
-		Psych::load_documents( <<EOY
+		Psych::load_stream( <<EOY
 ---
 Time: 2001-11-23 15:01:42 -05:00
 User: ed
@@ -581,7 +585,7 @@ EOY
 
 	def test_spec_oneline_docs
 		doc_ct = 0
-		Psych::load_documents( <<EOY
+		Psych::load_stream( <<EOY
 # The following is a sequence of three documents.
 # The first contains an empty mapping, the second
 # an empty sequence, and the last an empty string.
@@ -606,7 +610,7 @@ EOY
 	def test_spec_domain_prefix
         customer_proc = proc { |type, val|
             if Hash === val
-                scheme, domain, type = type.split( ':', 3 )
+                _, _, type = type.split( ':', 3 )
                 val['type'] = "domain #{type}"
                 val
             else

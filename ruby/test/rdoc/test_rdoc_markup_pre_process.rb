@@ -1,6 +1,6 @@
-# coding: utf-8
+# frozen_string_literal: true
 
-require 'rdoc/test_case'
+require 'minitest_helper'
 
 class TestRDocMarkupPreProcess < RDoc::TestCase
 
@@ -11,13 +11,13 @@ class TestRDocMarkupPreProcess < RDoc::TestCase
     @file_name = File.basename @tempfile.path
     @dir  = File.dirname @tempfile.path
 
-    @pp = RDoc::Markup::PreProcess.new __FILE__, [@dir]
+    @pp = RDoc::Markup::PreProcess.new @tempfile.path, [@dir, File.dirname(__FILE__)]
   end
 
   def teardown
     super
 
-    @tempfile.close
+    @tempfile.close!
   end
 
   def test_class_register
@@ -29,7 +29,8 @@ class TestRDocMarkupPreProcess < RDoc::TestCase
   def test_class_post_process
     RDoc::Markup::PreProcess.post_process do end
 
-    assert_equal 1, RDoc::Markup::PreProcess.post_processors.length
+    assert_equal 1, RDoc::Markup::PreProcess.post_processors.length,
+                 proc{RDoc::Markup::PreProcess.post_processors.inspect}
   end
 
   def test_include_file
@@ -54,8 +55,6 @@ contents of a string.
   end
 
   def test_include_file_encoding_incompatible
-    skip "Encoding not implemented" unless Object.const_defined? :Encoding
-
     @tempfile.write <<-INCLUDE
 # -*- mode: rdoc; coding: utf-8; fill-column: 74; -*-
 
@@ -72,12 +71,23 @@ contents of a string.
     assert_equal expected, content
   end
 
+  def test_include_file_in_other_directory
+    content = nil
+    out, err = capture_io do
+      content = @pp.include_file "test.txt", '', nil
+    end
+
+    assert_empty out
+    assert_empty err
+
+    assert_equal "test file\n", content
+  end
+
   def test_handle
     text = "# :main: M\n"
     out = @pp.handle text
 
-    assert_same out, text
-    assert_equal "#\n", text
+    assert_equal "#\n", out
   end
 
   def test_handle_comment
@@ -86,8 +96,7 @@ contents of a string.
 
     out = @pp.handle c
 
-    assert_same out, text
-    assert_equal "#\n", text
+    assert_equal "#\n", out
   end
 
   def test_handle_markup
@@ -119,8 +128,7 @@ contents of a string.
 
     out = @pp.handle text, cd
 
-    assert_same out, text
-    assert_equal "# a b c\n", text
+    assert_equal "# a b c\n", out
     assert_equal "# a b c\n", cd.metadata[:stuff]
   end
 
@@ -128,14 +136,13 @@ contents of a string.
     text = "# :x: y\n"
     out = @pp.handle text
 
-    assert_same out, text
-    assert_equal "# :x: y\n", text
+    assert_equal text, out
   end
 
   def test_handle_directive_blankline
     result = @pp.handle_directive '#', 'arg', 'a, b'
 
-    assert_equal "#\n", result
+    assert_equal "#:arg: a, b\n", result
   end
 
   def test_handle_directive_downcase
@@ -157,7 +164,7 @@ contents of a string.
   def test_handle_directive_arg_no_context
     result = @pp.handle_directive '', 'arg', 'a, b', nil
 
-    assert_equal "\n", result
+    assert_equal ":arg: a, b\n", result
   end
 
   def test_handle_directive_args
@@ -458,4 +465,3 @@ contents of a string.
   end
 
 end
-

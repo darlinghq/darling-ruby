@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'rubygems/command'
 require 'rubygems/dependency_list'
 require 'rubygems/uninstaller'
@@ -6,11 +7,25 @@ class Gem::Commands::CleanupCommand < Gem::Command
 
   def initialize
     super 'cleanup',
-          'Clean up old versions of installed gems in the local repository',
-          :force => false, :install_dir => Gem.dir
+          'Clean up old versions of installed gems',
+          :force => false, :install_dir => Gem.dir,
+          :check_dev => true
 
-    add_option('-d', '--dryrun', "") do |value, options|
+    add_option('-n', '-d', '--dryrun',
+               'Do not uninstall gems') do |value, options|
       options[:dryrun] = true
+    end
+
+    add_option('-D', '--[no-]check-development',
+               'Check development dependencies while uninstalling',
+               '(default: true)') do |value, options|
+      options[:check_dev] = value
+    end
+
+    add_option('--[no-]user-install',
+               'Cleanup in user\'s home directory instead',
+               'of GEM_HOME.') do |value, options|
+      options[:user_install] = value
     end
 
     @candidate_gems  = nil
@@ -32,11 +47,11 @@ class Gem::Commands::CleanupCommand < Gem::Command
 
   def description # :nodoc:
     <<-EOF
-The cleanup command removes old gems from GEM_HOME.  If an older version is
-installed elsewhere in GEM_PATH the cleanup command won't touch it.
+The cleanup command removes old versions of gems from GEM_HOME that are not
+required to meet a dependency.  If a gem is installed elsewhere in GEM_PATH
+the cleanup command won't delete it.
 
-Older gems that are required to satisify the dependencies of gems
-are not removed.
+If no gems are named all gems in GEM_HOME are cleaned.
     EOF
   end
 
@@ -47,7 +62,7 @@ are not removed.
   def execute
     say "Cleaning up installed gems..."
 
-    if options[:args].empty? then
+    if options[:args].empty?
       done     = false
       last_set = nil
 
@@ -64,16 +79,19 @@ are not removed.
       clean_gems
     end
 
-    say "Clean Up Complete"
+    say "Clean up complete"
 
-    if Gem.configuration.really_verbose then
+    verbose do
       skipped = @default_gems.map { |spec| spec.full_name }
 
-      say "Skipped default gems: #{skipped.join ', '}"
+      "Skipped default gems: #{skipped.join ', '}"
     end
   end
 
   def clean_gems
+    @original_home = Gem.dir
+    @original_path = Gem.path
+
     get_primary_gems
     get_candidate_gems
     get_gems_to_cleanup
@@ -85,9 +103,6 @@ are not removed.
 
     deps = deplist.strongly_connected_components.flatten
 
-    @original_home = Gem.dir
-    @original_path = Gem.path
-
     deps.reverse_each do |spec|
       uninstall_dep spec
     end
@@ -96,7 +111,7 @@ are not removed.
   end
 
   def get_candidate_gems
-    @candidate_gems = unless options[:args].empty? then
+    @candidate_gems = unless options[:args].empty?
                         options[:args].map do |gem_name|
                           Gem::Specification.find_all_by_name gem_name
                         end.flatten
@@ -114,6 +129,12 @@ are not removed.
       spec.default_gem?
     }
 
+    uninstall_from = options[:user_install] ? Gem.user_dir : @original_home
+
+    gems_to_cleanup = gems_to_cleanup.select { |spec|
+      spec.base_dir == uninstall_from
+    }
+
     @default_gems += default_gems
     @default_gems.uniq!
     @gems_to_cleanup = gems_to_cleanup.uniq
@@ -124,16 +145,16 @@ are not removed.
 
     Gem::Specification.each do |spec|
       if @primary_gems[spec.name].nil? or
-         @primary_gems[spec.name].version < spec.version then
+         @primary_gems[spec.name].version < spec.version
         @primary_gems[spec.name] = spec
       end
     end
   end
 
-  def uninstall_dep spec
-    return unless @full.ok_to_remove?(spec.full_name)
+  def uninstall_dep(spec)
+    return unless @full.ok_to_remove?(spec.full_name, options[:check_dev])
 
-    if options[:dryrun] then
+    if options[:dryrun]
       say "Dry Run Mode: Would uninstall #{spec.full_name}"
       return
     end
@@ -162,4 +183,3 @@ are not removed.
   end
 
 end
-

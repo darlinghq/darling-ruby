@@ -1,6 +1,7 @@
-require "rss/0.9"
+# frozen_string_literal: false
+require_relative "../0.9"
 
-require "rss/maker/base"
+require_relative "base"
 
 module RSS
   module Maker

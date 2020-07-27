@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'abbrev'
 require 'optparse'
 
@@ -46,13 +47,24 @@ class RDoc::RI::Driver
 
   class NotFoundError < Error
 
+    def initialize(klass, suggestions = nil) # :nodoc:
+      @klass = klass
+      @suggestions = suggestions
+    end
+
     ##
     # Name that wasn't found
 
-    alias name message
+    def name
+      @klass
+    end
 
     def message # :nodoc:
-      "Nothing known about #{super}"
+      str = "Nothing known about #{@klass}"
+      if @suggestions and !@suggestions.empty?
+        str += "\nDid you mean?  #{@suggestions.join("\n               ")}"
+      end
+      str
     end
   end
 
@@ -79,7 +91,6 @@ class RDoc::RI::Driver
     options[:interactive] = false
     options[:profile]     = false
     options[:show_all]    = false
-    options[:use_cache]   = true
     options[:use_stdout]  = !$stdout.tty?
     options[:width]       = 72
 
@@ -99,7 +110,7 @@ class RDoc::RI::Driver
   def self.dump data_path
     require 'pp'
 
-    open data_path, 'rb' do |io|
+    File.open data_path, 'rb' do |io|
       pp Marshal.load(io.read)
     end
   end
@@ -121,7 +132,7 @@ class RDoc::RI::Driver
       opt.summary_indent = ' ' * 4
 
       opt.banner = <<-EOT
-Usage: #{opt.program_name} [options] [names...]
+Usage: #{opt.program_name} [options] [name ...]
 
 Where name can be:
 
@@ -131,8 +142,8 @@ Where name can be:
 
   gem_name: | gem_name:README | gem_name:History
 
-All class names may be abbreviated to their minimum unambiguous form. If a name
-is ambiguous, all valid options will be listed.
+All class names may be abbreviated to their minimum unambiguous form.
+If a name is ambiguous, all valid options will be listed.
 
 A '.' matches either class or instance methods, while #method
 matches only instance and ::method matches only class methods.
@@ -150,23 +161,23 @@ For example:
     #{opt.program_name} zip
     #{opt.program_name} rdoc:README
 
-Note that shell quoting or escaping may be required for method names containing
-punctuation:
+Note that shell quoting or escaping may be required for method names
+containing punctuation:
 
     #{opt.program_name} 'Array.[]'
     #{opt.program_name} compact\\!
 
-To see the default directories ri will search, run:
+To see the default directories #{opt.program_name} will search, run:
 
     #{opt.program_name} --list-doc-dirs
 
-Specifying the --system, --site, --home, --gems or --doc-dir options will
-limit ri to searching only the specified directories.
+Specifying the --system, --site, --home, --gems, or --doc-dir options
+will limit ri to searching only the specified directories.
 
-ri options may be set in the 'RI' environment variable.
+ri options may be set in the RI environment variable.
 
-The ri pager can be set with the 'RI_PAGER' environment variable or the
-'PAGER' environment variable.
+The ri pager can be set with the RI_PAGER environment variable
+or the PAGER environment variable.
       EOT
 
       opt.separator nil
@@ -197,10 +208,17 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
 
       opt.separator nil
 
-      opt.on("--[no-]pager", "-T",
-             "Send output directly to stdout,",
-             "rather than to a pager.") do |use_pager|
+      opt.on("--[no-]pager",
+             "Send output to a pager,",
+             "rather than directly to stdout.") do |use_pager|
         options[:use_stdout] = !use_pager
+      end
+
+      opt.separator nil
+
+      opt.on("-T",
+             "Synonym for --no-pager.") do
+        options[:use_stdout] = true
       end
 
       opt.separator nil
@@ -212,7 +230,7 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
 
       opt.separator nil
 
-      opt.on("--server [PORT]", Integer,
+      opt.on("--server[=PORT]", Integer,
              "Run RDoc server on the given port.",
              "The default port is 8214.") do |port|
         options[:server] = port || 8214
@@ -227,11 +245,27 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
       formatters -= %w[html label test] # remove useless output formats
 
       opt.on("--format=NAME", "-f",
-             "Uses the selected formatter. The default",
+             "Use the selected formatter.  The default",
              "formatter is bs for paged output and ansi",
-             "otherwise. Valid formatters are:",
-             formatters.join(' '), formatters) do |value|
+             "otherwise.  Valid formatters are:",
+             "#{formatters.join(', ')}.", formatters) do |value|
         options[:formatter] = RDoc::Markup.const_get "To#{value.capitalize}"
+      end
+
+      opt.separator nil
+
+      opt.on("--help", "-h",
+             "Show help and exit.") do
+        puts opts
+        exit
+      end
+
+      opt.separator nil
+
+      opt.on("--version", "-v",
+             "Output version information and exit.") do
+        puts "#{opts.program_name} #{opts.version}"
+        exit
       end
 
       opt.separator nil
@@ -265,7 +299,7 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
              "Do not include documentation from",
              "the Ruby standard library, site_lib,",
              "installed gems, or ~/.rdoc.",
-             "Use with --doc-dir") do
+             "Use with --doc-dir.") do
         options[:use_system] = false
         options[:use_site] = false
         options[:use_gems] = false
@@ -275,8 +309,8 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
       opt.separator nil
 
       opt.on("--[no-]system",
-             "Include documentation from Ruby's standard",
-             "library.  Defaults to true.") do |value|
+             "Include documentation from Ruby's",
+             "standard library.  Defaults to true.") do |value|
         options[:use_system] = value
       end
 
@@ -310,14 +344,14 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
       opt.separator nil
 
       opt.on("--[no-]profile",
-             "Run with the ruby profiler") do |value|
+             "Run with the ruby profiler.") do |value|
         options[:profile] = value
       end
 
       opt.separator nil
 
       opt.on("--dump=CACHE", File,
-             "Dumps data from an ri cache or data file") do |value|
+             "Dump data from an ri cache or data file.") do |value|
         options[:dump_path] = value
       end
     end
@@ -391,6 +425,7 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
     @server      = options[:server]
     @use_stdout  = options[:use_stdout]
     @show_all    = options[:show_all]
+    @width       = options[:width]
 
     # pager process for jruby
     @jruby_pager_process = nil
@@ -459,38 +494,51 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
 
     extensions.each do |modules, store|
       if modules.length == 1 then
-        include = modules.first
-        name = include.name
-        path = store.friendly_path
-        out << RDoc::Markup::Paragraph.new("#{name} (from #{path})")
-
-        if include.comment then
-          out << RDoc::Markup::BlankLine.new
-          out << include.comment
-        end
+        add_extension_modules_single out, store, modules.first
       else
-        out << RDoc::Markup::Paragraph.new("(from #{store.friendly_path})")
-
-        wout, with = modules.partition { |incl| incl.comment.empty? }
-
-        out << RDoc::Markup::BlankLine.new unless with.empty?
-
-        with.each do |incl|
-          out << RDoc::Markup::Paragraph.new(incl.name)
-          out << RDoc::Markup::BlankLine.new
-          out << incl.comment
-        end
-
-        unless wout.empty? then
-          verb = RDoc::Markup::Verbatim.new
-
-          wout.each do |incl|
-            verb.push incl.name, "\n"
-          end
-
-          out << verb
-        end
+        add_extension_modules_multiple out, store, modules
       end
+    end
+  end
+
+  ##
+  # Renders multiple included +modules+ from +store+ to +out+.
+
+  def add_extension_modules_multiple out, store, modules # :nodoc:
+    out << RDoc::Markup::Paragraph.new("(from #{store.friendly_path})")
+
+    wout, with = modules.partition { |incl| incl.comment.empty? }
+
+    out << RDoc::Markup::BlankLine.new unless with.empty?
+
+    with.each do |incl|
+      out << RDoc::Markup::Paragraph.new(incl.name)
+      out << RDoc::Markup::BlankLine.new
+      out << incl.comment
+    end
+
+    unless wout.empty? then
+      verb = RDoc::Markup::Verbatim.new
+
+      wout.each do |incl|
+        verb.push incl.name, "\n"
+      end
+
+      out << verb
+    end
+  end
+
+  ##
+  # Adds a single extension module +include+ from +store+ to +out+
+
+  def add_extension_modules_single out, store, include # :nodoc:
+    name = include.name
+    path = store.friendly_path
+    out << RDoc::Markup::Paragraph.new("#{name} (from #{path})")
+
+    if include.comment then
+      out << RDoc::Markup::BlankLine.new
+      out << include.comment
     end
   end
 
@@ -596,68 +644,56 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
     add_extends  out, extends
 
     found.each do |store, klass|
-      comment = klass.comment
-      # TODO the store's cache should always return an empty Array
-      class_methods    = store.class_methods[klass.full_name]    || []
-      instance_methods = store.instance_methods[klass.full_name] || []
-      attributes       = store.attributes[klass.full_name]       || []
-
-      if comment.empty? and
-         instance_methods.empty? and class_methods.empty? then
-        also_in << store
-        next
-      end
-
-      add_from out, store
-
-      unless comment.empty? then
-        out << RDoc::Markup::Rule.new(1)
-
-        if comment.merged? then
-          parts = comment.parts
-          parts = parts.zip [RDoc::Markup::BlankLine.new] * parts.length
-          parts.flatten!
-          parts.pop
-
-          out.concat parts
-        else
-          out << comment
-        end
-      end
-
-      if class_methods or instance_methods or not klass.constants.empty? then
-        out << RDoc::Markup::Rule.new(1)
-      end
-
-      unless klass.constants.empty? then
-        out << RDoc::Markup::Heading.new(1, "Constants:")
-        out << RDoc::Markup::BlankLine.new
-        list = RDoc::Markup::List.new :NOTE
-
-        constants = klass.constants.sort_by { |constant| constant.name }
-
-        list.items.concat constants.map { |constant|
-          parts = constant.comment.parts if constant.comment
-          parts << RDoc::Markup::Paragraph.new('[not documented]') if
-            parts.empty?
-
-          RDoc::Markup::ListItem.new(constant.name, *parts)
-        }
-
-        out << list
-        out << RDoc::Markup::BlankLine.new
-      end
-
-      add_method_list out, class_methods,    'Class methods'
-      add_method_list out, instance_methods, 'Instance methods'
-      add_method_list out, attributes,       'Attributes'
-
-      add_method_documentation out, klass if @show_all
+      render_class out, store, klass, also_in
     end
 
     add_also_in out, also_in
 
     out
+  end
+
+  ##
+  # Adds the class +comment+ to +out+.
+
+  def class_document_comment out, comment # :nodoc:
+    unless comment.empty? then
+      out << RDoc::Markup::Rule.new(1)
+
+      if comment.merged? then
+        parts = comment.parts
+        parts = parts.zip [RDoc::Markup::BlankLine.new] * parts.length
+        parts.flatten!
+        parts.pop
+
+        out.concat parts
+      else
+        out << comment
+      end
+    end
+  end
+
+  ##
+  # Adds the constants from +klass+ to the Document +out+.
+
+  def class_document_constants out, klass # :nodoc:
+    return if klass.constants.empty?
+
+    out << RDoc::Markup::Heading.new(1, "Constants:")
+    out << RDoc::Markup::BlankLine.new
+    list = RDoc::Markup::List.new :NOTE
+
+    constants = klass.constants.sort_by { |constant| constant.name }
+
+    list.items.concat constants.map { |constant|
+      parts = constant.comment.parts if constant.comment
+      parts << RDoc::Markup::Paragraph.new('[not documented]') if
+        parts.empty?
+
+      RDoc::Markup::ListItem.new(constant.name, *parts)
+    }
+
+    out << list
+    out << RDoc::Markup::BlankLine.new
   end
 
   ##
@@ -709,16 +745,24 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
   # Completes +name+ based on the caches.  For Readline
 
   def complete name
-    klasses = classes.keys
     completions = []
 
     klass, selector, method = parse_name name
+
+    complete_klass  name, klass, selector, method, completions
+    complete_method name, klass, selector,         completions
+
+    completions.sort.uniq
+  end
+
+  def complete_klass name, klass, selector, method, completions # :nodoc:
+    klasses = classes.keys
 
     # may need to include Foo when given Foo::
     klass_name = method ? name : klass
 
     if name !~ /#|\./ then
-      completions = klasses.grep(/^#{Regexp.escape klass_name}[^:]*$/)
+      completions.replace klasses.grep(/^#{Regexp.escape klass_name}[^:]*$/)
       completions.concat klasses.grep(/^#{Regexp.escape name}[^:]*$/) if
         name =~ /::$/
 
@@ -728,7 +772,9 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
     elsif classes.key? klass_name then
       completions << klass_name
     end
+  end
 
+  def complete_method name, klass, selector, completions # :nodoc:
     if completions.include? klass and name =~ /#|\.|::/ then
       methods = list_methods_matching name
 
@@ -743,8 +789,6 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
 
       completions.concat methods
     end
-
-    completions.sort.uniq
   end
 
   ##
@@ -752,7 +796,9 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
 
   def display document
     page do |io|
-      text = document.accept formatter(io)
+      f = formatter(io)
+      f.width = @width if @width and f.respond_to?(:width)
+      text = document.accept f
 
       io.write text
     end
@@ -804,7 +850,7 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
     true
   rescue NotFoundError
     matches = list_methods_matching name if name =~ /::|#|\./
-    matches = classes.keys.grep(/^#{name}/) if matches.empty?
+    matches = classes.keys.grep(/^#{Regexp.escape name}/) if matches.empty?
 
     raise if matches.empty?
 
@@ -885,27 +931,39 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
     display out
   end
 
+  def check_did_you_mean # :nodoc:
+    if defined? DidYouMean::SpellChecker
+      true
+    else
+      begin
+        require 'did_you_mean'
+        if defined? DidYouMean::SpellChecker
+          true
+        else
+          false
+        end
+      rescue LoadError
+        false
+      end
+    end
+  end
+
   ##
   # Expands abbreviated klass +klass+ into a fully-qualified class.  "Zl::Da"
   # will be expanded to Zlib::DataError.
 
   def expand_class klass
-    klass.split('::').inject '' do |expanded, klass_part|
-      expanded << '::' unless expanded.empty?
-      short = expanded << klass_part
-
-      subset = classes.keys.select do |klass_name|
-        klass_name =~ /^#{expanded}[^:]*$/
+    class_names = classes.keys
+    ary = class_names.grep(Regexp.new("\\A#{klass.gsub(/(?=::|\z)/, '[^:]*')}\\z"))
+    if ary.length != 1 && ary.first != klass
+      if check_did_you_mean
+        suggestions = DidYouMean::SpellChecker.new(dictionary: class_names).correct(klass)
+        raise NotFoundError.new(klass, suggestions)
+      else
+        raise NotFoundError, klass
       end
-
-      abbrevs = Abbrev.abbrev subset
-
-      expanded = abbrevs[short]
-
-      raise NotFoundError, short unless expanded
-
-      expanded.dup
     end
+    ary.first
   end
 
   ##
@@ -1072,10 +1130,8 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
 
       return if name.nil? or name.empty?
 
-      name = expand_name name.strip
-
       begin
-        display_name name
+        display_name expand_name(name.strip)
       rescue NotFoundError => e
         puts e.message
       end
@@ -1183,6 +1239,12 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
     return unless method
 
     store.load_method klass, "#{type}#{method}"
+  rescue RDoc::Store::MissingFileError => e
+    comment = RDoc::Comment.new("missing documentation at #{e.file}").parse
+
+    method = RDoc::AnyMethod.new nil, name
+    method.comment = comment
+    method
   end
 
   ##
@@ -1212,7 +1274,21 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
   def lookup_method name
     found = load_methods_matching name
 
-    raise NotFoundError, name if found.empty?
+    if found.empty?
+      if check_did_you_mean
+        methods = []
+        _, _, method_name = parse_name name
+        find_methods name do |store, klass, ancestor, types, method|
+          methods.push(*store.class_methods[klass]) if [:class, :both].include? types
+          methods.push(*store.instance_methods[klass]) if [:instance, :both].include? types
+        end
+        methods = methods.uniq
+        suggestions = DidYouMean::SpellChecker.new(dictionary: methods).correct(method_name)
+        raise NotFoundError.new(name, suggestions)
+      else
+        raise NotFoundError, name
+      end
+    end
 
     filter_methods found, name
   end
@@ -1228,30 +1304,7 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
 
     filtered.each do |store, methods|
       methods.each do |method|
-        out << RDoc::Markup::Paragraph.new("(from #{store.friendly_path})")
-
-        unless name =~ /^#{Regexp.escape method.parent_name}/ then
-          out << RDoc::Markup::Heading.new(3, "Implementation from #{method.parent_name}")
-        end
-
-        out << RDoc::Markup::Rule.new(1)
-
-        if method.arglists then
-          arglists = method.arglists.chomp.split "\n"
-          arglists = arglists.map { |line| line + "\n" }
-          out << RDoc::Markup::Verbatim.new(*arglists)
-          out << RDoc::Markup::Rule.new(1)
-        end
-
-        if method.respond_to?(:superclass_method) and method.superclass_method
-          out << RDoc::Markup::BlankLine.new
-          out << RDoc::Markup::Heading.new(4, "(Uses superclass method #{method.superclass_method})")
-          out << RDoc::Markup::Rule.new(1)
-        end
-
-        out << RDoc::Markup::BlankLine.new
-        out << method.comment
-        out << RDoc::Markup::BlankLine.new
+        render_method out, store, method, name
       end
     end
 
@@ -1346,6 +1399,96 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
   end
 
   ##
+  # Renders the +klass+ from +store+ to +out+.  If the klass has no
+  # documentable items the class is added to +also_in+ instead.
+
+  def render_class out, store, klass, also_in # :nodoc:
+    comment = klass.comment
+    # TODO the store's cache should always return an empty Array
+    class_methods    = store.class_methods[klass.full_name]    || []
+    instance_methods = store.instance_methods[klass.full_name] || []
+    attributes       = store.attributes[klass.full_name]       || []
+
+    if comment.empty? and
+       instance_methods.empty? and class_methods.empty? then
+      also_in << store
+      return
+    end
+
+    add_from out, store
+
+    class_document_comment out, comment
+
+    if class_methods or instance_methods or not klass.constants.empty? then
+      out << RDoc::Markup::Rule.new(1)
+    end
+
+    class_document_constants out, klass
+
+    add_method_list out, class_methods,    'Class methods'
+    add_method_list out, instance_methods, 'Instance methods'
+    add_method_list out, attributes,       'Attributes'
+
+    add_method_documentation out, klass if @show_all
+  end
+
+  def render_method out, store, method, name # :nodoc:
+    out << RDoc::Markup::Paragraph.new("(from #{store.friendly_path})")
+
+    unless name =~ /^#{Regexp.escape method.parent_name}/ then
+      out << RDoc::Markup::Heading.new(3, "Implementation from #{method.parent_name}")
+    end
+
+    out << RDoc::Markup::Rule.new(1)
+
+    render_method_arguments out, method.arglists
+    render_method_superclass out, method
+    if method.is_alias_for
+      al = method.is_alias_for
+      alias_for = store.load_method al.parent_name, "#{al.name_prefix}#{al.name}"
+      render_method_comment out, method, alias_for
+    else
+      render_method_comment out, method
+    end
+  end
+
+  def render_method_arguments out, arglists # :nodoc:
+    return unless arglists
+
+    arglists = arglists.chomp.split "\n"
+    arglists = arglists.map { |line| line + "\n" }
+    out << RDoc::Markup::Verbatim.new(*arglists)
+    out << RDoc::Markup::Rule.new(1)
+  end
+
+  def render_method_comment out, method, alias_for = nil# :nodoc:
+    if alias_for
+      unless method.comment.nil? or method.comment.empty?
+        out << RDoc::Markup::BlankLine.new
+        out << method.comment
+      end
+      out << RDoc::Markup::BlankLine.new
+      out << RDoc::Markup::Paragraph.new("(This method is an alias for #{alias_for.full_name}.)")
+      out << RDoc::Markup::BlankLine.new
+      out << alias_for.comment
+      out << RDoc::Markup::BlankLine.new
+    else
+      out << RDoc::Markup::BlankLine.new
+      out << method.comment
+      out << RDoc::Markup::BlankLine.new
+    end
+  end
+
+  def render_method_superclass out, method # :nodoc:
+    return unless
+      method.respond_to?(:superclass_method) and method.superclass_method
+
+    out << RDoc::Markup::BlankLine.new
+    out << RDoc::Markup::Heading.new(4, "(Uses superclass method #{method.superclass_method})")
+    out << RDoc::Markup::Rule.new(1)
+  end
+
+  ##
   # Looks up and displays ri data according to the options given.
 
   def run
@@ -1371,7 +1514,7 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
   def setup_pager
     return if @use_stdout
 
-    jruby = Object.const_defined?(:RUBY_ENGINE) && RUBY_ENGINE == 'jruby'
+    jruby = RUBY_ENGINE == 'jruby'
 
     pagers = [ENV['RI_PAGER'], ENV['PAGER'], 'pager', 'less', 'more']
 
@@ -1412,7 +1555,9 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
 
     server = WEBrick::HTTPServer.new :Port => @server
 
-    server.mount '/', RDoc::Servlet
+    extra_doc_dirs = @stores.map {|s| s.type == :extra ? s.path : nil}.compact
+
+    server.mount '/', RDoc::Servlet, nil, extra_doc_dirs
 
     trap 'INT'  do server.shutdown end
     trap 'TERM' do server.shutdown end
@@ -1421,4 +1566,3 @@ The ri pager can be set with the 'RI_PAGER' environment variable or the
   end
 
 end
-

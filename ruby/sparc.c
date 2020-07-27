@@ -12,12 +12,21 @@
 void
 rb_sparc_flush_register_windows(void)
 {
-    asm
+/*
+ * gcc doesn't provide "asm" keyword if -ansi and the various -std options
+ * are given.
+ * http://gcc.gnu.org/onlinedocs/gcc/Alternate-Keywords.html
+ */
+#ifndef __GNUC__
+#define __asm__ asm
+#endif
+
+    __asm__
 #ifdef __GNUC__
     __volatile__
 #endif
 
-/* This condition should be in sync with one in configure.in */
+/* This condition should be in sync with one in configure.ac */
 #if defined(__sparcv9) || defined(__sparc_v9__) || defined(__arch64__)
 # ifdef __GNUC__
     ("flushw" : : : "%o7")

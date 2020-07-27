@@ -1,4 +1,5 @@
-require 'psych/helper'
+# frozen_string_literal: true
+require_relative 'helper'
 
 class PsychStructWithIvar < Struct.new(:foo)
   attr_reader :bar

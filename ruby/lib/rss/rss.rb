@@ -1,8 +1,17 @@
+# frozen_string_literal: false
 require "time"
 
 class Time
   class << self
     unless respond_to?(:w3cdtf)
+      # This method converts a W3CDTF string date/time format to Time object.
+      #
+      # The W3CDTF format is defined here: http://www.w3.org/TR/NOTE-datetime
+      #
+      #   Time.w3cdtf('2003-02-15T13:50:05-05:00')
+      #   # => 2003-02-15 10:50:05 -0800
+      #   Time.w3cdtf('2003-02-15T13:50:05-05:00').class
+      #   # => Time
       def w3cdtf(date)
         if /\A\s*
             (-?\d+)-(\d\d)-(\d\d)
@@ -20,7 +29,7 @@ class Time
             datetime = apply_offset(*(datetime + [off]))
             datetime << usec
             time = Time.utc(*datetime)
-            time.localtime unless zone_utc?(zone)
+            force_zone!(time, zone, off)
             time
           else
             datetime << usec
@@ -34,11 +43,18 @@ class Time
   end
 
   unless method_defined?(:w3cdtf)
+    # This method converts a Time object to a String. The String contains the
+    # time in W3CDTF date/time format.
+    #
+    # The W3CDTF format is defined here: http://www.w3.org/TR/NOTE-datetime
+    #
+    #  Time.now.w3cdtf
+    #  # => "2013-08-26T14:12:10.817124-07:00"
     def w3cdtf
       if usec.zero?
         fraction_digits = 0
       else
-        fraction_digits = Math.log10(usec.to_s.sub(/0*$/, '').to_i).floor + 1
+        fraction_digits = strftime('%6N').index(/0*\z/)
       end
       xmlschema(fraction_digits)
     end
@@ -47,20 +63,26 @@ end
 
 
 require "English"
-require "rss/utils"
-require "rss/converter"
-require "rss/xml-stylesheet"
+require_relative "utils"
+require_relative "converter"
+require_relative "xml-stylesheet"
 
 module RSS
 
+  # The current version of RSS
   VERSION = "0.2.7"
 
+  # The URI of the RSS 1.0 specification
   URI = "http://purl.org/rss/1.0/"
 
-  DEBUG = false
+  DEBUG = false # :nodoc:
 
+  # The basic error all other RSS errors stem from. Rescue this error if you
+  # want to handle any given RSS error and you don't care about the details.
   class Error < StandardError; end
 
+  # RSS, being an XML-based format, has namespace support. If two namespaces are
+  # declared with the same name, an OverlappedPrefixError will be raised.
   class OverlappedPrefixError < Error
     attr_reader :prefix
     def initialize(prefix)
@@ -68,11 +90,13 @@ module RSS
     end
   end
 
+  # The InvalidRSSError error is the base class for a variety of errors
+  # related to a poorly-formed RSS feed. Rescue this error if you only
+  # care that a file could be invalid, but don't care how it is invalid.
   class InvalidRSSError < Error; end
 
-  ##
-  # Raised if no matching tag is found.
-
+  # Since RSS is based on XML, it must have opening and closing tags that
+  # match. If they don't, a MissingTagError will be raised.
   class MissingTagError < InvalidRSSError
     attr_reader :tag, :parent
     def initialize(tag, parent)
@@ -81,9 +105,9 @@ module RSS
     end
   end
 
-  ##
-  # Raised if there are more occurrences of the tag than expected.
-
+  # Some tags must only exist a specific number of times in a given RSS feed.
+  # If a feed has too many occurrences of one of these tags, a TooMuchTagError
+  # will be raised.
   class TooMuchTagError < InvalidRSSError
     attr_reader :tag, :parent
     def initialize(tag, parent)
@@ -92,9 +116,8 @@ module RSS
     end
   end
 
-  ##
-  # Raised if a required attribute is missing.
-
+  # Certain attributes are required on specific tags in an RSS feed. If a feed
+  # is missing one of these attributes, a MissingAttributeError is raised.
   class MissingAttributeError < InvalidRSSError
     attr_reader :tag, :attribute
     def initialize(tag, attribute)
@@ -103,9 +126,8 @@ module RSS
     end
   end
 
-  ##
-  # Raised when an unknown tag is found.
-
+  # RSS does not allow for free-form tag names, so if an RSS feed contains a
+  # tag that we don't know about, an UnknownTagError is raised.
   class UnknownTagError < InvalidRSSError
     attr_reader :tag, :uri
     def initialize(tag, uri)
@@ -114,9 +136,7 @@ module RSS
     end
   end
 
-  ##
   # Raised when an unexpected tag is encountered.
-
   class NotExpectedTagError < InvalidRSSError
     attr_reader :tag, :uri, :parent
     def initialize(tag, uri, parent)
@@ -125,11 +145,10 @@ module RSS
     end
   end
   # For backward compatibility :X
-  NotExceptedTagError = NotExpectedTagError
+  NotExceptedTagError = NotExpectedTagError # :nodoc:
 
-  ##
-  # Raised when an incorrect value is used.
-
+  # Attributes are in key-value form, and if there's no value provided for an
+  # attribute, a NotAvailableValueError will be raised.
   class NotAvailableValueError < InvalidRSSError
     attr_reader :tag, :value, :attribute
     def initialize(tag, value, attribute=nil)
@@ -141,9 +160,7 @@ module RSS
     end
   end
 
-  ##
   # Raised when an unknown conversion error occurs.
-
   class UnknownConversionMethodError < Error
     attr_reader :to, :from
     def initialize(to, from)
@@ -153,11 +170,9 @@ module RSS
     end
   end
   # for backward compatibility
-  UnknownConvertMethod = UnknownConversionMethodError
+  UnknownConvertMethod = UnknownConversionMethodError # :nodoc:
 
-  ##
   # Raised when a conversion failure occurs.
-
   class ConversionError < Error
     attr_reader :string, :to, :from
     def initialize(string, to, from)
@@ -168,9 +183,7 @@ module RSS
     end
   end
 
-  ##
   # Raised when a required variable is not set.
-
   class NotSetError < Error
     attr_reader :name, :variables
     def initialize(name, variables)
@@ -180,9 +193,7 @@ module RSS
     end
   end
 
-  ##
   # Raised when a RSS::Maker attempts to use an unknown maker.
-
   class UnsupportedMakerVersionError < Error
     attr_reader :version
     def initialize(version)
@@ -315,7 +326,6 @@ EOC
 
     def inherit_convert_attr_reader(*attrs)
       attrs.each do |attr|
-        attr = attr.id2name if attr.kind_of?(Integer)
         module_eval(<<-EOC, *get_file_and_line_from_caller(2))
         def #{attr}_without_inherit
           convert(@#{attr})
@@ -336,7 +346,6 @@ EOC
 
     def uri_convert_attr_reader(*attrs)
       attrs.each do |attr|
-        attr = attr.id2name if attr.kind_of?(Integer)
         module_eval(<<-EOC, *get_file_and_line_from_caller(2))
         def #{attr}_without_base
           convert(@#{attr})
@@ -357,7 +366,6 @@ EOC
 
     def convert_attr_reader(*attrs)
       attrs.each do |attr|
-        attr = attr.id2name if attr.kind_of?(Integer)
         module_eval(<<-EOC, *get_file_and_line_from_caller(2))
         def #{attr}
           convert(@#{attr})
@@ -366,13 +374,12 @@ EOC
       end
     end
 
-    def yes_clean_other_attr_reader(*attrs)
+    def explicit_clean_other_attr_reader(*attrs)
       attrs.each do |attr|
-        attr = attr.id2name if attr.kind_of?(Integer)
         module_eval(<<-EOC, __FILE__, __LINE__ + 1)
           attr_reader(:#{attr})
           def #{attr}?
-            YesCleanOther.parse(@#{attr})
+            ExplicitCleanOther.parse(@#{attr})
           end
         EOC
       end
@@ -380,7 +387,6 @@ EOC
 
     def yes_other_attr_reader(*attrs)
       attrs.each do |attr|
-        attr = attr.id2name if attr.kind_of?(Integer)
         module_eval(<<-EOC, __FILE__, __LINE__ + 1)
           attr_reader(:#{attr})
           def #{attr}?
@@ -398,7 +404,6 @@ EOC
       end
       separator ||= ", "
       attrs.each do |attr|
-        attr = attr.id2name if attr.kind_of?(Integer)
         module_eval(<<-EOC, __FILE__, __LINE__ + 1)
           attr_reader(:#{attr})
           def #{attr}_content
@@ -539,7 +544,7 @@ EOC
 EOC
     end
 
-    def yes_clean_other_writer(name, disp_name=name)
+    def explicit_clean_other_writer(name, disp_name=name)
       module_eval(<<-EOC, __FILE__, __LINE__ + 1)
         def #{name}=(value)
           value = (value ? "yes" : "no") if [true, false].include?(value)
@@ -591,11 +596,10 @@ EOC
 
       def #{accessor_name}=(*args)
         receiver = self.class.name
-        warn("Warning:\#{caller.first.sub(/:in `.*'\z/, '')}: " \
-             "Don't use `\#{receiver}\##{accessor_name} = XXX'/" \
+        warn("Don't use `\#{receiver}\##{accessor_name} = XXX'/" \
              "`\#{receiver}\#set_#{accessor_name}(XXX)'. " \
              "Those APIs are not sense of Ruby. " \
-             "Use `\#{receiver}\##{plural_name} << XXX' instead of them.")
+             "Use `\#{receiver}\##{plural_name} << XXX' instead of them.", uplevel: 1)
         if args.size == 1
           @#{accessor_name}.push(args[0])
         else
@@ -758,8 +762,8 @@ EOC
           text_type_writer name, disp_name
         when :content
           content_writer name, disp_name
-        when :yes_clean_other
-          yes_clean_other_writer name, disp_name
+        when :explicit_clean_other
+          explicit_clean_other_writer name, disp_name
         when :yes_other
           yes_other_writer name, disp_name
         when :csv
@@ -777,8 +781,8 @@ EOC
           inherit_convert_attr_reader name
         when :uri
           uri_convert_attr_reader name
-        when :yes_clean_other
-          yes_clean_other_attr_reader name
+        when :explicit_clean_other
+          explicit_clean_other_attr_reader name
         when :yes_other
           yes_other_attr_reader name
         when :csv
@@ -952,7 +956,7 @@ EOC
             children = child
             children.any? {|c| c.have_required_elements?}
           else
-            !child.to_s.empty?
+            not child.nil?
           end
         else
           true
@@ -1230,7 +1234,7 @@ EOC
         __send__(self.class.xml_getter).to_s
       else
         _content = content
-        _content = [_content].pack("m").delete("\n") if need_base64_encode?
+        _content = [_content].pack("m0") if need_base64_encode?
         h(_content)
       end
     end

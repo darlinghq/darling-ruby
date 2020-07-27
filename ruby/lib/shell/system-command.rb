@@ -1,7 +1,8 @@
+# frozen_string_literal: false
 #
 #   shell/system-command.rb -
 #       $Release Version: 0.7 $
-#       $Revision: 33638 $
+#       $Revision: 65505 $
 #       by Keiju ISHITSUKA(keiju@ruby-lang.org)
 #
 # --
@@ -9,19 +10,19 @@
 #
 #
 
-require "shell/filter"
+require_relative "filter"
 
 class Shell
   class SystemCommand < Filter
     def initialize(sh, command, *opts)
       if t = opts.find{|opt| !opt.kind_of?(String) && opt.class}
-        Shell.Fail Error::TypeError, t.class, "String"
+        Shell.Fail TypeError, t.class, "String"
       end
       super(sh)
       @command = command
       @opts = opts
 
-      @input_queue = Queue.new
+      @input_queue = Thread::Queue.new
       @pid = nil
 
       sh.process_controller.add_schedule(self)
@@ -82,7 +83,6 @@ class Shell
 
     def start_import
       notify "Job(%id) start imp-pipe.", @shell.debug?
-      rs = @shell.record_separator unless rs
       _eop = true
       Thread.start {
         begin

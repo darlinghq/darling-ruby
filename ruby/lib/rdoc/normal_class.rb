@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 ##
 # A normal class, neither singleton nor anonymous
 
@@ -18,6 +19,10 @@ class RDoc::NormalClass < RDoc::ClassModule
     else
       super
     end
+  end
+
+  def aref_prefix # :nodoc:
+    'class'
   end
 
   ##
@@ -42,9 +47,9 @@ class RDoc::NormalClass < RDoc::ClassModule
   def to_s # :nodoc:
     display = "#{self.class.name} #{self.full_name}"
     if superclass
-      display << ' < ' << (superclass.is_a?(String) ? superclass : superclass.full_name)
+      display += ' < ' + (superclass.is_a?(String) ? superclass : superclass.full_name)
     end
-    display << ' -> ' << is_alias_for.to_s if is_alias_for
+    display += ' -> ' + is_alias_for.to_s if is_alias_for
     display
   end
 

@@ -1,3 +1,4 @@
+# frozen_string_literal: false
 begin
   require 'win32ole'
 rescue LoadError
@@ -17,9 +18,6 @@ if defined?(WIN32OLE_METHOD)
 
       ole_type = WIN32OLE_TYPE.new("Microsoft Scripting Runtime", "File")
       @m_file_name = WIN32OLE_METHOD.new(ole_type, "name")
-
-      ole_type = WIN32OLE_TYPE.new("Microsoft Internet Controls", "WebBrowser")
-      @m_navigate_complete = WIN32OLE_METHOD.new(ole_type, "NavigateComplete")
     end
 
     def test_initialize
@@ -28,16 +26,16 @@ if defined?(WIN32OLE_METHOD)
         WIN32OLE_METHOD.new(1, 2)
       }
       assert_raise(ArgumentError) {
-        method = WIN32OLE_METHOD.new("foo")
+        WIN32OLE_METHOD.new("foo")
       }
       assert_raise(ArgumentError) {
-        method = WIN32OLE_METHOD.new(ole_type)
+        WIN32OLE_METHOD.new(ole_type)
       }
       assert_raise(WIN32OLERuntimeError) {
-        method = WIN32OLE_METHOD.new(ole_type, "NonExistMethod")
+        WIN32OLE_METHOD.new(ole_type, "NonExistMethod")
       }
       assert_raise(TypeError) {
-        method = WIN32OLE_METHOD.new(ole_type, 1)
+        WIN32OLE_METHOD.new(ole_type, 1)
       }
       method  = WIN32OLE_METHOD.new(ole_type, "Open")
       assert_instance_of(WIN32OLE_METHOD, method)
@@ -78,16 +76,6 @@ if defined?(WIN32OLE_METHOD)
     def test_visible?
       assert(@m_namespace.visible?)
       assert(!@m_invoke.visible?)
-    end
-
-    def test_event?
-      assert(@m_navigate_complete.event?)
-      assert(!@m_namespace.event?)
-    end
-
-    def test_event_interface
-      assert_equal("DWebBrowserEvents", @m_navigate_complete.event_interface)
-      assert_equal(nil, @m_namespace.event_interface)
     end
 
     def test_helpstring

@@ -1,4 +1,5 @@
-require 'psych/helper'
+# frozen_string_literal: true
+require_relative 'helper'
 
 module Psych
   class TestException < TestCase
@@ -14,6 +15,18 @@ module Psych
     def setup
       super
       @wups = Wups.new
+
+      @orig_verbose, $VERBOSE = $VERBOSE, nil
+    end
+
+    def teardown
+      $VERBOSE = @orig_verbose
+    end
+
+    def test_naming_exception
+      err     = String.xxx rescue $!
+      new_err = Psych.load(Psych.dump(err))
+      assert_equal err.message, new_err.message
     end
 
     def test_load_takes_file
@@ -23,9 +36,15 @@ module Psych
       assert_nil ex.file
 
       ex = assert_raises(Psych::SyntaxError) do
-        Psych.load '--- `', 'meow'
+        Psych.load '--- `', filename: 'meow'
       end
       assert_equal 'meow', ex.file
+
+      # deprecated interface
+      ex = assert_raises(Psych::SyntaxError) do
+        Psych.load '--- `', 'deprecated'
+      end
+      assert_equal 'deprecated', ex.file
     end
 
     def test_psych_parse_stream_takes_file
@@ -36,7 +55,7 @@ module Psych
       assert_match '(<unknown>)', ex.message
 
       ex = assert_raises(Psych::SyntaxError) do
-        Psych.parse_stream '--- `', 'omg!'
+        Psych.parse_stream '--- `', filename: 'omg!'
       end
       assert_equal 'omg!', ex.file
       assert_match 'omg!', ex.message
@@ -50,33 +69,39 @@ module Psych
       assert_match '(<unknown>)', ex.message
 
       ex = assert_raises(Psych::SyntaxError) do
-        Psych.load_stream '--- `', 'omg!'
+        Psych.load_stream '--- `', filename: 'omg!'
       end
       assert_equal 'omg!', ex.file
+
+      # deprecated interface
+      ex = assert_raises(Psych::SyntaxError) do
+        Psych.load_stream '--- `', 'deprecated'
+      end
+      assert_equal 'deprecated', ex.file
     end
 
     def test_parse_file_exception
-      t = Tempfile.new(['parsefile', 'yml'])
-      t.binmode
-      t.write '--- `'
-      t.close
-      ex = assert_raises(Psych::SyntaxError) do
-        Psych.parse_file t.path
-      end
-      assert_equal t.path, ex.file
-      t.close(true)
+      Tempfile.create(['parsefile', 'yml']) {|t|
+        t.binmode
+        t.write '--- `'
+        t.close
+        ex = assert_raises(Psych::SyntaxError) do
+          Psych.parse_file t.path
+        end
+        assert_equal t.path, ex.file
+      }
     end
 
     def test_load_file_exception
-      t = Tempfile.new(['loadfile', 'yml'])
-      t.binmode
-      t.write '--- `'
-      t.close
-      ex = assert_raises(Psych::SyntaxError) do
-        Psych.load_file t.path
-      end
-      assert_equal t.path, ex.file
-      t.close(true)
+      Tempfile.create(['loadfile', 'yml']) {|t|
+        t.binmode
+        t.write '--- `'
+        t.close
+        ex = assert_raises(Psych::SyntaxError) do
+          Psych.load_file t.path
+        end
+        assert_equal t.path, ex.file
+      }
     end
 
     def test_psych_parse_takes_file
@@ -87,9 +112,15 @@ module Psych
       assert_nil ex.file
 
       ex = assert_raises(Psych::SyntaxError) do
-        Psych.parse '--- `', 'omg!'
+        Psych.parse '--- `', filename: 'omg!'
       end
       assert_match 'omg!', ex.message
+
+      # deprecated interface
+      ex = assert_raises(Psych::SyntaxError) do
+        Psych.parse '--- `', 'deprecated'
+      end
+      assert_match 'deprecated', ex.message
     end
 
     def test_attributes
@@ -114,21 +145,8 @@ module Psych
       assert_equal 2, w.bar
     end
 
-    def test_to_yaml_properties
-      class << @wups
-        def to_yaml_properties
-          [:@foo]
-        end
-      end
-
-      w = Psych.load(Psych.dump(@wups))
-      assert_equal @wups, w
-      assert_equal 1, w.foo
-      assert_nil w.bar
-    end
-
     def test_psych_syntax_error
-      Tempfile.open(['parsefile', 'yml']) do |t|
+      Tempfile.create(['parsefile', 'yml']) do |t|
         t.binmode
         t.write '--- `'
         t.close
@@ -138,7 +156,6 @@ module Psych
         rescue StandardError
           assert true # count assertion
         ensure
-          t.close(true)
           return unless $!
 
           ancestors = $!.class.ancestors.inspect

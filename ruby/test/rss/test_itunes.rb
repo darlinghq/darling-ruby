@@ -1,7 +1,8 @@
+# frozen_string_literal: false
 require "cgi"
 require "rexml/document"
 
-require "rss-testcase"
+require_relative "rss-testcase"
 
 require "rss/2.0"
 require "rss/itunes"
@@ -223,9 +224,13 @@ module RSS
 
     def assert_itunes_explicit(readers, &rss20_maker)
       _wrap_assertion do
+        _assert_itunes_explicit(true, "explicit", readers, &rss20_maker)
         _assert_itunes_explicit(true, "yes", readers, &rss20_maker)
+        _assert_itunes_explicit(true, "true", readers, &rss20_maker)
         _assert_itunes_explicit(false, "clean", readers, &rss20_maker)
-        _assert_itunes_explicit(nil, "no", readers, &rss20_maker)
+        _assert_itunes_explicit(false, "no", readers, &rss20_maker)
+        _assert_itunes_explicit(false, "false", readers, &rss20_maker)
+        _assert_itunes_explicit(nil, "invalid", readers, &rss20_maker)
       end
     end
 

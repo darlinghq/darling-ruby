@@ -1,4 +1,5 @@
-require 'psych/helper'
+# frozen_string_literal: true
+require_relative 'helper'
 
 module Psych
   class TestStringTainted < TestCase
@@ -89,7 +90,7 @@ module Psych
     end
 
     def assert_taintedness string
-      @parser.parse string.taint
+      @parser.parse string.dup.taint
     end
   end
 
@@ -117,14 +118,14 @@ module Psych
 
   class TestIOTainted < TestStringTainted
     def assert_taintedness string
-      t = Tempfile.new(['something', 'yml'])
-      t.binmode
-      t.write string
-      t.close
-      File.open(t.path, 'r:bom|utf-8') { |f|
-        @parser.parse f
+      Tempfile.create(['something', 'yml']) {|t|
+        t.binmode
+        t.write string
+        t.close
+        File.open(t.path, 'r:bom|utf-8') { |f|
+          @parser.parse f
+        }
       }
-      t.close(true)
     end
   end
 end

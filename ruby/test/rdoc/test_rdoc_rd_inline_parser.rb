@@ -1,4 +1,5 @@
-require 'rdoc/test_case'
+# frozen_string_literal: true
+require 'minitest_helper'
 
 class TestRDocRdInlineParser < RDoc::TestCase
 
@@ -175,4 +176,3 @@ class TestRDocRdInlineParser < RDoc::TestCase
   end
 
 end
-

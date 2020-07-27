@@ -1,22 +1,24 @@
+# frozen_string_literal: true
 require 'rubygems/test_case'
 require 'rubygems/commands/cert_command'
-require 'rubygems/fix_openssl_warnings' if RUBY_VERSION < "1.9"
 
-unless defined? OpenSSL then
-  warn "`gem cert` tests are being skipped, module OpenSSL not found"
+unless defined?(OpenSSL::SSL)
+  warn 'Skipping `gem cert` tests.  openssl not found.'
 end
 
 class TestGemCommandsCertCommand < Gem::TestCase
 
   ALTERNATE_CERT = load_cert 'alternate'
+  EXPIRED_PUBLIC_CERT = load_cert 'expired'
 
   ALTERNATE_KEY_FILE = key_path 'alternate'
   PRIVATE_KEY_FILE   = key_path 'private'
   PUBLIC_KEY_FILE    = key_path 'public'
 
-  ALTERNATE_CERT_FILE = cert_path 'alternate'
-  CHILD_CERT_FILE     = cert_path 'child'
-  PUBLIC_CERT_FILE    = cert_path 'public'
+  ALTERNATE_CERT_FILE      = cert_path 'alternate'
+  CHILD_CERT_FILE          = cert_path 'child'
+  PUBLIC_CERT_FILE         = cert_path 'public'
+  EXPIRED_PUBLIC_CERT_FILE = cert_path 'expired'
 
   def setup
     super
@@ -98,14 +100,22 @@ Added '/CN=alternate/DC=example'
   end
 
   def test_execute_build
+    passphrase = 'Foo bar'
+
     @cmd.handle_options %W[--build nobody@example.com]
 
-    use_ui @ui do
+    @build_ui = Gem::MockGemUi.new "#{passphrase}\n#{passphrase}"
+
+    use_ui @build_ui do
       @cmd.execute
     end
 
-    output = @ui.output.split "\n"
+    output = @build_ui.output.squeeze("\n").split "\n"
 
+    assert_equal "Passphrase for your Private Key:  ",
+                 output.shift
+    assert_equal "Please repeat the passphrase for your Private Key:  ",
+                 output.shift
     assert_equal "Certificate: #{File.join @tempdir, 'gem-public_cert.pem'}",
                  output.shift
     assert_equal "Private Key: #{File.join @tempdir, 'gem-private_key.pem'}",
@@ -115,10 +125,104 @@ Added '/CN=alternate/DC=example'
                  output.shift
 
     assert_empty output
-    assert_empty @ui.error
+    assert_empty @build_ui.error
 
     assert_path_exists File.join(@tempdir, 'gem-private_key.pem')
     assert_path_exists File.join(@tempdir, 'gem-public_cert.pem')
+  end
+
+  def test_execute_build_bad_email_address
+    passphrase = 'Foo bar'
+    email = "nobody@"
+
+    @cmd.handle_options %W[--build #{email}]
+
+    @build_ui = Gem::MockGemUi.new "#{passphrase}\n#{passphrase}"
+
+    use_ui @build_ui do
+
+      e = assert_raises Gem::CommandLineError do
+        @cmd.execute
+      end
+
+      assert_equal "Invalid email address #{email}",
+        e.message
+
+      refute_path_exists File.join(@tempdir, 'gem-private_key.pem')
+      refute_path_exists File.join(@tempdir, 'gem-public_cert.pem')
+    end
+  end
+
+  def test_execute_build_expiration_days
+    passphrase = 'Foo bar'
+
+    @cmd.handle_options %W[
+      --build nobody@example.com
+      --days 26
+    ]
+
+    @build_ui = Gem::MockGemUi.new "#{passphrase}\n#{passphrase}"
+
+    use_ui @build_ui do
+      @cmd.execute
+    end
+
+    output = @build_ui.output.squeeze("\n").split "\n"
+
+    assert_equal "Passphrase for your Private Key:  ",
+                 output.shift
+    assert_equal "Please repeat the passphrase for your Private Key:  ",
+                 output.shift
+    assert_equal "Certificate: #{File.join @tempdir, 'gem-public_cert.pem'}",
+                 output.shift
+    assert_equal "Private Key: #{File.join @tempdir, 'gem-private_key.pem'}",
+                 output.shift
+
+    assert_equal "Don't forget to move the key file to somewhere private!",
+                 output.shift
+
+    assert_empty output
+    assert_empty @build_ui.error
+
+    assert_path_exists File.join(@tempdir, 'gem-private_key.pem')
+    assert_path_exists File.join(@tempdir, 'gem-public_cert.pem')
+
+    pem = File.read("#{@tempdir}/gem-public_cert.pem")
+    cert = OpenSSL::X509::Certificate.new(pem)
+
+    test = (cert.not_after - cert.not_before).to_i / (24 * 60 * 60)
+    assert_equal(test, 26)
+  end
+
+  def test_execute_build_bad_passphrase_confirmation
+    passphrase = 'Foo bar'
+    passphrase_confirmation = 'Fu bar'
+
+    @cmd.handle_options %W[--build nobody@example.com]
+
+    @build_ui = Gem::MockGemUi.new "#{passphrase}\n#{passphrase_confirmation}"
+
+    use_ui @build_ui do
+      e = assert_raises Gem::CommandLineError do
+        @cmd.execute
+      end
+
+      output = @build_ui.output.squeeze("\n").split "\n"
+
+      assert_equal "Passphrase for your Private Key:  ",
+                   output.shift
+      assert_equal "Please repeat the passphrase for your Private Key:  ",
+                   output.shift
+
+      assert_empty output
+
+      assert_equal "Passphrase and passphrase confirmation don't match",
+                   e.message
+
+    end
+
+    refute_path_exists File.join(@tempdir, 'gem-private_key.pem')
+    refute_path_exists File.join(@tempdir, 'gem-public_cert.pem')
   end
 
   def test_execute_build_key
@@ -135,21 +239,33 @@ Added '/CN=alternate/DC=example'
 
     assert_equal "Certificate: #{File.join @tempdir, 'gem-public_cert.pem'}",
                  output.shift
-    assert_equal "Private Key: #{File.join @tempdir, 'gem-private_key.pem'}",
-                 output.shift
 
-    assert_equal "Don't forget to move the key file to somewhere private!",
+    assert_empty output
+    assert_empty @ui.error
+
+    assert_path_exists File.join(@tempdir, 'gem-public_cert.pem')
+    refute_path_exists File.join(@tempdir, 'gem-private_key.pem')
+  end
+
+  def test_execute_build_encrypted_key
+    @cmd.handle_options %W[
+      --build nobody@example.com
+      --private-key #{ENCRYPTED_PRIVATE_KEY_PATH}
+    ]
+
+    use_ui @ui do
+      @cmd.execute
+    end
+
+    output = @ui.output.split "\n"
+
+    assert_equal "Certificate: #{File.join @tempdir, 'gem-public_cert.pem'}",
                  output.shift
 
     assert_empty output
     assert_empty @ui.error
 
     assert_path_exists File.join(@tempdir, 'gem-public_cert.pem')
-
-    private_key_file = File.join @tempdir, 'gem-private_key.pem'
-    assert_path_exists private_key_file
-
-    assert_equal PRIVATE_KEY.to_pem, File.read(private_key_file)
   end
 
   def test_execute_certificate
@@ -201,6 +317,17 @@ Added '/CN=alternate/DC=example'
     assert_equal '', @ui.error
 
     assert_equal PRIVATE_KEY.to_pem, @cmd.options[:key].to_pem
+  end
+
+  def test_execute_encrypted_private_key
+    use_ui @ui do
+      @cmd.send :handle_options, %W[--private-key #{ENCRYPTED_PRIVATE_KEY_PATH}]
+    end
+
+    assert_equal '', @ui.output
+    assert_equal '', @ui.error
+
+    assert_equal ENCRYPTED_PRIVATE_KEY.to_pem, @cmd.options[:key].to_pem
   end
 
   def test_execute_remove
@@ -307,11 +434,72 @@ Removed '/CN=alternate/DC=example'
     assert_equal mask, File.stat(path).mode unless win_platform?
   end
 
+  def test_execute_sign_encrypted_key
+    path = File.join @tempdir, 'cert.pem'
+    Gem::Security.write ALTERNATE_CERT, path, 0600
+
+    assert_equal '/CN=alternate/DC=example', ALTERNATE_CERT.issuer.to_s
+
+    @cmd.handle_options %W[
+      --private-key #{ENCRYPTED_PRIVATE_KEY_PATH}
+      --certificate #{PUBLIC_CERT_FILE}
+
+      --sign #{path}
+    ]
+
+    use_ui @ui do
+      @cmd.execute
+    end
+
+    assert_equal '', @ui.output
+    assert_equal '', @ui.error
+
+    cert = OpenSSL::X509::Certificate.new File.read path
+
+    assert_equal '/CN=nobody/DC=example', cert.issuer.to_s
+
+    mask = 0100600 & (~File.umask)
+
+    assert_equal mask, File.stat(path).mode unless win_platform?
+  end
+
   def test_execute_sign_default
     FileUtils.mkdir_p File.join Gem.user_home, '.gem'
 
     private_key_path = File.join Gem.user_home, '.gem', 'gem-private_key.pem'
     Gem::Security.write PRIVATE_KEY, private_key_path
+
+    public_cert_path = File.join Gem.user_home, '.gem', 'gem-public_cert.pem'
+    Gem::Security.write PUBLIC_CERT, public_cert_path
+
+    path = File.join @tempdir, 'cert.pem'
+    Gem::Security.write ALTERNATE_CERT, path, 0600
+
+    assert_equal '/CN=alternate/DC=example', ALTERNATE_CERT.issuer.to_s
+
+    @cmd.handle_options %W[--sign #{path}]
+
+    use_ui @ui do
+      @cmd.execute
+    end
+
+    assert_equal '', @ui.output
+    assert_equal '', @ui.error
+
+    cert = OpenSSL::X509::Certificate.new File.read path
+
+    assert_equal '/CN=nobody/DC=example', cert.issuer.to_s
+
+    mask = 0100600 & (~File.umask)
+
+    assert_equal mask, File.stat(path).mode unless win_platform?
+  end
+
+  def test_execute_sign_default_encrypted_key
+    FileUtils.mkdir_p File.join(Gem.user_home, '.gem')
+
+    private_key_path = File.join Gem.user_home, '.gem', 'gem-private_key.pem'
+    Gem::Security.write ENCRYPTED_PRIVATE_KEY, private_key_path, 0600, PRIVATE_KEY_PASSPHRASE
 
     public_cert_path = File.join Gem.user_home, '.gem', 'gem-public_cert.pem'
     Gem::Security.write PUBLIC_CERT, public_cert_path
@@ -393,6 +581,68 @@ ERROR:  --private-key not specified and ~/.gem/gem-private_key.pem does not exis
     EXPECTED
 
     assert_equal expected, @ui.error
+  end
+
+  def test_execute_re_sign
+    gem_path = File.join Gem.user_home, ".gem"
+    Dir.mkdir gem_path
+
+    path = File.join @tempdir, 'cert.pem'
+    Gem::Security.write EXPIRED_PUBLIC_CERT, path, 0600
+
+    assert_equal '/CN=nobody/DC=example', EXPIRED_PUBLIC_CERT.issuer.to_s
+
+    tmp_expired_cert_file = File.join(Dir.tmpdir, File.basename(EXPIRED_PUBLIC_CERT_FILE))
+    File.write(tmp_expired_cert_file, File.read(EXPIRED_PUBLIC_CERT_FILE))
+
+    @cmd.handle_options %W[
+      --private-key #{PRIVATE_KEY_FILE}
+      --certificate #{tmp_expired_cert_file}
+      --re-sign
+    ]
+
+    use_ui @ui do
+      @cmd.execute
+    end
+
+    expected_path = File.join(gem_path, "#{File.basename(tmp_expired_cert_file)}.expired")
+
+    assert_match(
+      /INFO:  Your certificate #{tmp_expired_cert_file} has been re-signed\nINFO:  Your expired certificate will be located at: #{expected_path}\.[0-9]+/,
+      @ui.output
+    )
+    assert_equal '', @ui.error
+  end
+
+  def test_execute_re_sign_with_cert_expiration_length_days
+    gem_path = File.join Gem.user_home, ".gem"
+    Dir.mkdir gem_path
+
+    path = File.join @tempdir, 'cert.pem'
+    Gem::Security.write EXPIRED_PUBLIC_CERT, path, 0600
+
+    assert_equal '/CN=nobody/DC=example', EXPIRED_PUBLIC_CERT.issuer.to_s
+
+    tmp_expired_cert_file = File.join(Dir.tmpdir, File.basename(EXPIRED_PUBLIC_CERT_FILE))
+    File.write(tmp_expired_cert_file, File.read(EXPIRED_PUBLIC_CERT_FILE))
+
+    @cmd.handle_options %W[
+      --private-key #{PRIVATE_KEY_FILE}
+      --certificate #{tmp_expired_cert_file}
+      --re-sign
+    ]
+
+    Gem.configuration.cert_expiration_length_days = 28
+
+    use_ui @ui do
+      @cmd.execute
+    end
+
+    re_signed_cert = OpenSSL::X509::Certificate.new(File.read(tmp_expired_cert_file))
+    cert_days_to_expire = (re_signed_cert.not_after - re_signed_cert.not_before).to_i / (24 * 60 * 60)
+
+    assert_equal(28, cert_days_to_expire)
+    assert_equal '', @ui.error
   end
 
   def test_handle_options
@@ -509,6 +759,24 @@ ERROR:  --private-key not specified and ~/.gem/gem-private_key.pem does not exis
     assert_equal [ALTERNATE_CERT_FILE, CHILD_CERT_FILE], @cmd.options[:sign]
   end
 
+  def test_handle_options_sign_encrypted_key
+    @cmd.handle_options %W[
+      --private-key #{ALTERNATE_KEY_FILE}
+      --private-key #{ENCRYPTED_PRIVATE_KEY_PATH}
+
+      --certificate #{ALTERNATE_CERT_FILE}
+      --certificate #{PUBLIC_CERT_FILE}
+
+      --sign #{ALTERNATE_CERT_FILE}
+      --sign #{CHILD_CERT_FILE}
+    ]
+
+    assert_equal ENCRYPTED_PRIVATE_KEY.to_pem, @cmd.options[:key].to_pem
+    assert_equal PUBLIC_CERT.to_pem, @cmd.options[:issuer_cert].to_pem
+
+    assert_equal [ALTERNATE_CERT_FILE, CHILD_CERT_FILE], @cmd.options[:sign]
+  end
+
   def test_handle_options_sign_nonexistent
     nonexistent = File.join @tempdir, 'nonexistent'
     e = assert_raises OptionParser::InvalidArgument do
@@ -525,5 +793,4 @@ ERROR:  --private-key not specified and ~/.gem/gem-private_key.pem does not exis
                  e.message
   end
 
-end if defined? OpenSSL
-
+end if defined?(OpenSSL::SSL)

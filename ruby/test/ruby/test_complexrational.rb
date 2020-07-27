@@ -1,3 +1,4 @@
+# frozen_string_literal: false
 require 'test/unit'
 
 class ComplexRational_Test < Test::Unit::TestCase
@@ -74,8 +75,8 @@ class ComplexRational_Test < Test::Unit::TestCase
 
     assert_equal(0, Rational(2,3) <=> SimpleRat(2,3))
     assert_equal(0, SimpleRat(2,3) <=> Rational(2,3))
-    assert(Rational(2,3) == SimpleRat(2,3))
-    assert(SimpleRat(2,3) == Rational(2,3))
+    assert_equal(Rational(2,3), SimpleRat(2,3))
+    assert_equal(SimpleRat(2,3), Rational(2,3))
 
     assert_equal(SimpleRat, (c + 0).class)
     assert_equal(SimpleRat, (c - 0).class)
@@ -168,10 +169,10 @@ class ComplexRational_Test < Test::Unit::TestCase
     assert_equal([Float,Float],
 		 (cc ** c).instance_eval{[real.class, imag.class]})
 
-    assert(Complex(SimpleRat(2,3),SimpleRat(3,2)) ==
-	   Complex(Rational(2,3),Rational(3,2)))
-    assert(Complex(Rational(2,3),Rational(3,2)) ==
-	   Complex(SimpleRat(2,3),SimpleRat(3,2)))
+    assert_equal(Complex(SimpleRat(2,3),SimpleRat(3,2)),
+                 Complex(Rational(2,3),Rational(3,2)))
+    assert_equal(Complex(Rational(2,3),Rational(3,2)),
+                 Complex(SimpleRat(2,3),SimpleRat(3,2)))
 
     assert_equal([SimpleRat,SimpleRat],
 		 (c + 0).instance_eval{[real.class, imag.class]})
@@ -213,10 +214,10 @@ class SimpleRat < Numeric
   def numerator() @num end
   def denominator() @den end
 
-  def +@ () self end
-  def -@ () self.class.new(-@num, @den) end
+  def +@() self end
+  def -@() self.class.new(-@num, @den) end
 
-  def + (o)
+  def +(o)
     case o
     when SimpleRat, Rational
       a = @num * o.denominator
@@ -232,7 +233,7 @@ class SimpleRat < Numeric
     end
   end
 
-  def - (o)
+  def -(o)
     case o
     when SimpleRat, Rational
       a = @num * o.denominator
@@ -248,7 +249,7 @@ class SimpleRat < Numeric
     end
   end
 
-  def * (o)
+  def *(o)
     case o
     when SimpleRat, Rational
       a = @num * o.numerator
@@ -272,7 +273,7 @@ class SimpleRat < Numeric
       self.class.new(a, b)
     when Integer
       if o == 0
-	raise raise ZeroDivisionError, "divided by zero"
+        raise ZeroDivisionError, "divided by zero"
       end
       self.quo(self.class.new(o))
     when Float
@@ -333,7 +334,7 @@ class SimpleRat < Numeric
   def divmod(o) [div(o), modulo(o)] end
   def quotrem(o) [quot(o), remainder(o)] end
 
-  def ** (o)
+  def **(o)
     case o
     when SimpleRat, Rational
       Float(self) ** o
@@ -356,7 +357,7 @@ class SimpleRat < Numeric
     end
   end
 
-  def <=> (o)
+  def <=>(o)
     case o
     when SimpleRat, Rational
       a = @num * o.denominator
@@ -372,7 +373,7 @@ class SimpleRat < Numeric
     end
   end
 
-  def == (o)
+  def ==(o)
     begin
       (self <=> o) == 0
     rescue

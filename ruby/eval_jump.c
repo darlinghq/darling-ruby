@@ -50,7 +50,6 @@ rb_f_at_exit(void)
 struct end_proc_data {
     void (*func) ();
     VALUE data;
-    int safe;
     struct end_proc_data *next;
 };
 
@@ -72,7 +71,6 @@ rb_set_end_proc(void (*func)(VALUE), VALUE data)
     link->next = *list;
     link->func = func;
     link->data = data;
-    link->safe = rb_safe_level();
     *list = link;
 }
 
@@ -93,56 +91,45 @@ rb_mark_end_proc(void)
     }
 }
 
+static void
+exec_end_procs_chain(struct end_proc_data *volatile *procs, VALUE *errp)
+{
+    struct end_proc_data volatile endproc;
+    struct end_proc_data *link;
+    VALUE errinfo = *errp;
+
+    while ((link = *procs) != 0) {
+	*procs = link->next;
+	endproc = *link;
+	xfree(link);
+	(*endproc.func) (endproc.data);
+	*errp = errinfo;
+    }
+}
+
 void
 rb_exec_end_proc(void)
 {
-    struct end_proc_data volatile endproc;
-    struct end_proc_data volatile *link;
-    int status;
-    volatile int safe = rb_safe_level();
-    rb_thread_t *th = GET_THREAD();
-    volatile VALUE errinfo = th->errinfo;
+    enum ruby_tag_type state;
+    rb_execution_context_t * volatile ec = GET_EC();
+    volatile VALUE errinfo = ec->errinfo;
 
-    while (ephemeral_end_procs) {
-	link = ephemeral_end_procs;
-	ephemeral_end_procs = link->next;
-	endproc = *link;
-	xfree((void *)link);
-	link = &endproc;
-
-	PUSH_TAG();
-	if ((status = EXEC_TAG()) == 0) {
-	    rb_set_safe_level_force(link->safe);
-	    (*link->func) (link->data);
-	}
-	POP_TAG();
-	if (status) {
-	    error_handle(status);
-	    if (!NIL_P(th->errinfo)) errinfo = th->errinfo;
-	}
+    EC_PUSH_TAG(ec);
+    if ((state = EC_EXEC_TAG()) == TAG_NONE) {
+      again:
+	exec_end_procs_chain(&ephemeral_end_procs, &ec->errinfo);
+	exec_end_procs_chain(&end_procs, &ec->errinfo);
     }
-
-    while (end_procs) {
-	link = end_procs;
-	end_procs = link->next;
-	endproc = *link;
-	xfree((void *)link);
-	link = &endproc;
-
-	PUSH_TAG();
-	if ((status = EXEC_TAG()) == 0) {
-	    rb_set_safe_level_force(link->safe);
-	    (*link->func) (link->data);
-	}
-	POP_TAG();
-	if (status) {
-	    error_handle(status);
-	    if (!NIL_P(th->errinfo)) errinfo = th->errinfo;
-	}
+    else {
+	EC_TMPPOP_TAG();
+	error_handle(state);
+	if (!NIL_P(ec->errinfo)) errinfo = ec->errinfo;
+	EC_REPUSH_TAG();
+	goto again;
     }
+    EC_POP_TAG();
 
-    rb_set_safe_level_force(safe);
-    th->errinfo = errinfo;
+    ec->errinfo = errinfo;
 }
 
 void

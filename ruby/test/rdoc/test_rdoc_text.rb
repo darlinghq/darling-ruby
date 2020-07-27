@@ -1,6 +1,7 @@
-# coding: utf-8
+# frozen_string_literal: true
 
-require 'rdoc/test_case'
+require 'minitest_helper'
+require 'timeout'
 
 class TestRDocText < RDoc::TestCase
 
@@ -14,16 +15,7 @@ class TestRDocText < RDoc::TestCase
     @top_level = @store.add_file 'file.rb'
   end
 
-  def mu_pp obj
-    s = ''
-    s = PP.pp obj, s
-    s = s.force_encoding Encoding.default_external if defined? Encoding
-    s.chomp
-  end
-
   def test_self_encode_fallback
-    skip "Encoding not implemented" unless Object.const_defined? :Encoding
-
     assert_equal '…',
                  RDoc::Text::encode_fallback('…', Encoding::UTF_8,    '...')
     assert_equal '...',
@@ -69,10 +61,8 @@ class TestRDocText < RDoc::TestCase
   end
 
   def test_expand_tabs_encoding
-    skip "Encoding not implemented" unless Object.const_defined? :Encoding
-
     inn = "hello\ns\tdave"
-    inn.force_encoding Encoding::BINARY
+    inn = RDoc::Encoding.change_encoding inn, Encoding::BINARY
 
     out = expand_tabs inn
 
@@ -99,8 +89,6 @@ The comments associated with
   end
 
   def test_flush_left_encoding
-    skip "Encoding not implemented" unless Object.const_defined? :Encoding
-
     text = <<-TEXT
 
   we don't worry too much.
@@ -108,7 +96,7 @@ The comments associated with
   The comments associated with
     TEXT
 
-    text.force_encoding Encoding::US_ASCII
+    text = RDoc::Encoding.change_encoding text, Encoding::US_ASCII
 
     expected = <<-EXPECTED
 
@@ -264,42 +252,30 @@ Examples
     assert_equal RDoc::Markup::Document.new, parse("\n")
   end
 
-#  def test_snippet
-#    text = <<-TEXT
-#This is one-hundred characters or more of text in a single paragraph.  This
-#paragraph will be cut off some point after the one-hundredth character.
-#    TEXT
-#
-#    expected = text.gsub(/\r?\n/, ' ').sub(/ some point.*/, '')
-#
-#    assert_equal expected, snippet(text)
-#  end
-#
-#  def test_snippet_comment
-#    c = comment 'This is a comment'
-#
-#    assert_equal 'This is a comment', snippet(c)
-#  end
-#
-#  def test_snippet_no_space
-#    text = <<-TEXT.strip
-#This is one-hundred characters or more of text in a single paragraph.  This
-#paragraph will not be cut
-#    TEXT
-#
-#    expected = <<-EXPECTED.strip.gsub(/\r?\n/, ' ')
-#This is one-hundred characters or more of text in a single paragraph.  This
-#paragraph will not be cut
-#    EXPECTED
-#
-#    assert_equal expected, snippet(text)
-#  end
-#
-#  def test_snippet_short
-#    text = 'This is a comment'
-#
-#    assert_equal text.dup, snippet(text)
-#  end
+  def test_snippet
+    text = <<-TEXT
+This is one-hundred characters or more of text in a single paragraph.  This
+paragraph will be cut off some point after the one-hundredth character.
+    TEXT
+
+    expected = <<-EXPECTED
+<p>This is one-hundred characters or more of text in a single paragraph.  This paragraph will be cut off …
+    EXPECTED
+
+    assert_equal expected, snippet(text)
+  end
+
+  def test_snippet_comment
+    c = comment 'This is a comment'
+
+    assert_equal "<p>This is a comment\n", snippet(c)
+  end
+
+  def test_snippet_short
+    text = 'This is a comment'
+
+    assert_equal "<p>#{text}\n", snippet(text)
+  end
 
   def test_strip_hashes
     text = <<-TEXT
@@ -320,8 +296,6 @@ Examples
   end
 
   def test_strip_hashes_encoding
-    skip "Encoding not implemented" unless Object.const_defined? :Encoding
-
     text = <<-TEXT
 ##
 # we don't worry too much.
@@ -329,7 +303,7 @@ Examples
 # The comments associated with
     TEXT
 
-    text.force_encoding Encoding::CP852
+    text = RDoc::Encoding.change_encoding text, Encoding::CP852
 
     expected = <<-EXPECTED
 
@@ -355,12 +329,10 @@ Examples
   end
 
   def test_strip_newlines_encoding
-    skip "Encoding not implemented" unless Object.const_defined? :Encoding
-
     assert_equal Encoding::UTF_8, ''.encoding, 'Encoding sanity check'
 
     text = " \n"
-    text.force_encoding Encoding::US_ASCII
+    text = RDoc::Encoding.change_encoding text, Encoding::US_ASCII
 
     stripped = strip_newlines text
 
@@ -405,9 +377,33 @@ Examples
     assert_equal expected, strip_stars(text)
   end
 
-  def test_strip_stars_encoding
-    skip "Encoding not implemented" unless Object.const_defined? :Encoding
+  def test_strip_stars_document_method_special
+    text = <<-TEXT
+/*
+ * Document-method: Zlib::GzipFile#mtime=
+ * Document-method: []
+ * Document-method: `
+ * Document-method: |
+ * Document-method: &
+ * Document-method: <=>
+ * Document-method: =~
+ * Document-method: +
+ * Document-method: -
+ * Document-method: +@
+ *
+ * A comment
+ */
+    TEXT
 
+    expected = <<-EXPECTED
+
+   A comment
+    EXPECTED
+
+    assert_equal expected, strip_stars(text)
+  end
+
+  def test_strip_stars_encoding
     text = <<-TEXT
 /*
  * * we don't worry too much.
@@ -416,7 +412,7 @@ Examples
  */
     TEXT
 
-    text.force_encoding Encoding::CP852
+    text = RDoc::Encoding.change_encoding text, Encoding::CP852
 
     expected = <<-EXPECTED
 
@@ -432,8 +428,6 @@ Examples
   end
 
   def test_strip_stars_encoding2
-    skip "Encoding not implemented" unless Object.const_defined? :Encoding
-
     text = <<-TEXT
 /*
  * * we don't worry too much.
@@ -442,7 +436,7 @@ Examples
  */
     TEXT
 
-    text.force_encoding Encoding::BINARY
+    text = RDoc::Encoding.change_encoding text, Encoding::BINARY
 
     expected = <<-EXPECTED
 
@@ -528,8 +522,6 @@ The comments associated with
   end
 
   def test_to_html_encoding
-    skip "Encoding not implemented" unless Object.const_defined? :Encoding
-
     s = '...(c)'.encode Encoding::Shift_JIS
 
     html = to_html s
@@ -563,9 +555,12 @@ The comments associated with
     assert_equal "mismatched <tt> tag\n", err
   end
 
-  def formatter()
+  def formatter
     RDoc::Markup::ToHtml.new @options
   end
 
-end
+  def options
+    @options
+  end
 
+end

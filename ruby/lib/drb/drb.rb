@@ -1,3 +1,4 @@
+# frozen_string_literal: false
 #
 # = drb/drb.rb
 #
@@ -46,9 +47,8 @@
 #   Translation of presentation on Ruby by Masatoshi Seki.
 
 require 'socket'
-require 'thread'
-require 'fcntl'
-require 'drb/eq'
+require 'io/wait'
+require_relative 'eq'
 
 #
 # == Overview
@@ -177,6 +177,9 @@ require 'drb/eq'
 #   # Not necessary for this small example, but will be required
 #   # as soon as we pass a non-marshallable object as an argument
 #   # to a dRuby call.
+#   #
+#   # Note: this must be called at least once per process to take any effect.
+#   # This is particularly important if your application forks.
 #   DRb.start_service
 #
 #   timeserver = DRbObject.new_with_uri(SERVER_URI)
@@ -231,7 +234,7 @@ require 'drb/eq'
 #       def get_logger(name)
 #           if !@loggers.has_key? name
 #               # make the filename safe, then declare it to be so
-#               fname = name.gsub(/[.\/]/, "_").untaint
+#               fname = name.gsub(/[.\/\\\:]/, "_").untaint
 #               @loggers[name] = Logger.new(name, @basedir + "/" + fname)
 #           end
 #           return @loggers[name]
@@ -357,7 +360,7 @@ module DRb
   # drb remains valid only while that object instance remains alive
   # within the server runtime.
   #
-  # For alternative mechanisms, see DRb::TimerIdConv in rdb/timeridconv.rb
+  # For alternative mechanisms, see DRb::TimerIdConv in drb/timeridconv.rb
   # and DRbNameIdConv in sample/name.rb in the full drb distribution.
   class DRbIdConv
 
@@ -742,7 +745,7 @@ module DRb
         end
       end
       if first && (config[:auto_load] != false)
-        auto_load(uri, config)
+        auto_load(uri)
         return open(uri, config, false)
       end
       raise DRbBadURI, 'can\'t parse uri:' + uri
@@ -766,7 +769,7 @@ module DRb
         end
       end
       if first && (config[:auto_load] != false)
-        auto_load(uri, config)
+        auto_load(uri)
         return open_server(uri, config, false)
       end
       raise DRbBadURI, 'can\'t parse uri:' + uri
@@ -789,15 +792,15 @@ module DRb
         end
       end
       if first && (config[:auto_load] != false)
-        auto_load(uri, config)
+        auto_load(uri)
         return uri_option(uri, config, false)
       end
       raise DRbBadURI, 'can\'t parse uri:' + uri
     end
     module_function :uri_option
 
-    def auto_load(uri, config)  # :nodoc:
-      if uri =~ /^drb([a-z0-9]+):/
+    def auto_load(uri)  # :nodoc:
+      if /\Adrb([a-z0-9]+):/ =~ uri
         require("drb/#{$1}") rescue nil
       end
     end
@@ -813,13 +816,13 @@ module DRb
     # :stopdoc:
     private
     def self.parse_uri(uri)
-      if uri =~ /^druby:\/\/(.*?):(\d+)(\?(.*))?$/
+      if /\Adruby:\/\/(.*?):(\d+)(\?(.*))?\z/ =~ uri
         host = $1
         port = $2.to_i
         option = $4
         [host, port, option]
       else
-        raise(DRbBadScheme, uri) unless uri =~ /^druby:/
+        raise(DRbBadScheme, uri) unless uri.start_with?('druby:')
         raise(DRbBadURI, 'can\'t parse uri:' + uri)
       end
     end
@@ -844,7 +847,11 @@ module DRb
     def self.getservername
       host = Socket::gethostname
       begin
-        Socket::gethostbyname(host)[0]
+        Socket::getaddrinfo(host, nil,
+                                  Socket::AF_UNSPEC,
+                                  Socket::SOCK_STREAM,
+                                  0,
+                                  Socket::AI_PASSIVE)[0][3]
       rescue
         'localhost'
       end
@@ -902,6 +909,7 @@ module DRb
       @acl = config[:tcp_acl]
       @msg = DRbMessage.new(config)
       set_sockopt(@socket)
+      @shutdown_pipe_r, @shutdown_pipe_w = IO.pipe
     end
 
     # Get the URI that we are connected to.
@@ -945,18 +953,27 @@ module DRb
     # returned by #open or by #accept, then it closes this particular
     # client-server session.
     def close
+      shutdown
       if @socket
         @socket.close
         @socket = nil
       end
+      close_shutdown_pipe
     end
+
+    def close_shutdown_pipe
+      @shutdown_pipe_w.close
+      @shutdown_pipe_r.close
+    end
+    private :close_shutdown_pipe
 
     # On the server side, for an instance returned by #open_server,
     # accept a client connection and return a new instance to handle
     # the server's side of this client-server session.
     def accept
       while true
-        s = @socket.accept
+        s = accept_or_shutdown
+        return nil unless s
         break if (@acl ? @acl.allow_socket?(s) : true)
         s.close
       end
@@ -968,10 +985,24 @@ module DRb
       self.class.new(uri, s, @config)
     end
 
+    def accept_or_shutdown
+      readables, = IO.select([@socket, @shutdown_pipe_r])
+      if readables.include? @shutdown_pipe_r
+        return nil
+      end
+      @socket.accept
+    end
+    private :accept_or_shutdown
+
+    # Graceful shutdown
+    def shutdown
+      @shutdown_pipe_w.close
+    end
+
     # Check to see if this connection is alive.
     def alive?
       return false unless @socket
-      if IO.select([@socket], nil, nil, 0)
+      if @socket.to_io.wait_readable(0)
         close
         return false
       end
@@ -980,7 +1011,6 @@ module DRb
 
     def set_sockopt(soc) # :nodoc:
       soc.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
-      soc.fcntl(Fcntl::F_SETFD, Fcntl::FD_CLOEXEC) if defined? Fcntl::FD_CLOEXEC
     end
   end
 
@@ -992,7 +1022,7 @@ module DRb
     def initialize(option)
       @option = option.to_s
     end
-    attr :option
+    attr_reader :option
     def to_s; @option; end
 
     def ==(other)
@@ -1141,7 +1171,7 @@ module DRb
       bt = []
       result.backtrace.each do |x|
         break if /`__send__'$/ =~ x
-        if /^\(druby:\/\// =~ x
+        if /\A\(druby:\/\// =~ x
           bt.push(x)
         else
           bt.push(prefix + x)
@@ -1173,7 +1203,7 @@ module DRb
   # not normally need to deal with it directly.
   class DRbConn
     POOL_SIZE = 16  # :nodoc:
-    @mutex = Mutex.new
+    @mutex = Thread::Mutex.new
     @pool = []
 
     def self.open(remote_uri)  # :nodoc:
@@ -1435,7 +1465,7 @@ module DRb
       if  Thread.current['DRb'] && Thread.current['DRb']['server'] == self
         Thread.current['DRb']['stop_service'] = true
       else
-        @thread.kill.join
+        shutdown
       end
     end
 
@@ -1454,14 +1484,25 @@ module DRb
 
     private
 
+    def shutdown
+      current = Thread.current
+      if @protocol.respond_to? :shutdown
+        @protocol.shutdown
+      else
+        [@thread, *@grp.list].each { |thread|
+          thread.kill unless thread == current # xxx: Thread#kill
+        }
+      end
+      @thread.join unless @thread == current
+    end
+
     ##
     # Starts the DRb main loop in a new thread.
 
     def run
       Thread.start do
         begin
-          while true
-            main_loop
+          while main_loop
           end
         ensure
           @protocol.close if @protocol
@@ -1529,17 +1570,23 @@ module DRb
         if $SAFE < @safe_level
           info = Thread.current['DRb']
           if @block
-            @result = Thread.new {
+            @result = Thread.new do
               Thread.current['DRb'] = info
+              prev_safe_level = $SAFE
               $SAFE = @safe_level
               perform_with_block
-            }.value
+            ensure
+              $SAFE = prev_safe_level
+            end.value
           else
-            @result = Thread.new {
+            @result = Thread.new do
               Thread.current['DRb'] = info
+              prev_safe_level = $SAFE
               $SAFE = @safe_level
               perform_without_block
-            }.value
+            ensure
+              $SAFE = prev_safe_level
+            end.value
           end
         else
           if @block
@@ -1591,15 +1638,19 @@ module DRb
 
     end
 
-    if RUBY_VERSION >= '1.8'
-      require 'drb/invokemethod'
-      class InvokeMethod
-        include InvokeMethod18Mixin
-      end
-    else
-      require 'drb/invokemethod16'
-      class InvokeMethod
-        include InvokeMethod16Mixin
+    require_relative 'invokemethod'
+    class InvokeMethod
+      include InvokeMethod18Mixin
+    end
+
+    def error_print(exception)
+      exception.backtrace.inject(true) do |first, x|
+        if first
+          $stderr.puts "#{x}: #{exception} (#{exception.class})"
+        else
+          $stderr.puts "\tfrom #{x}"
+        end
+        false
       end
     end
 
@@ -1611,7 +1662,9 @@ module DRb
     # returning responses, until the client closes the connection
     # or a local method call fails.
     def main_loop
-      Thread.start(@protocol.accept) do |client|
+      client0 = @protocol.accept
+      return nil if !client0
+      Thread.start(client0) do |client|
         @grp.add Thread.current
         Thread.current['DRb'] = { 'client' => client ,
                                   'server' => self }
@@ -1624,17 +1677,15 @@ module DRb
             succ = false
             invoke_method = InvokeMethod.new(self, client)
             succ, result = invoke_method.perform
-            if !succ && verbose
-              p result
-              result.backtrace.each do |x|
-                puts x
-              end
-            end
-            client.send_reply(succ, result) rescue nil
+            error_print(result) if !succ && verbose
+            client.send_reply(succ, result)
+          rescue Exception => e
+            error_print(e) if verbose
           ensure
             client.close unless succ
             if Thread.current['DRb']['stop_service']
-              Thread.new { stop_service }
+              shutdown
+              break
             end
             break unless succ
           end
@@ -1785,7 +1836,7 @@ module DRb
   end
   module_function :install_acl
 
-  @mutex = Mutex.new
+  @mutex = Thread::Mutex.new
   def mutex # :nodoc:
     @mutex
   end
@@ -1815,6 +1866,11 @@ module DRb
   # Removes +server+ from the list of registered servers.
   def remove_server(server)
     @server.delete(server.uri)
+    mutex.synchronize do
+      if @primary_server == server
+        @primary_server = nil
+      end
+    end
   end
   module_function :remove_server
 

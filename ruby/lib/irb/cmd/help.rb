@@ -1,7 +1,8 @@
+# frozen_string_literal: false
 #
 #   help.rb - helper using ri
 #   	$Release Version: 0.9.6$
-#   	$Revision: 38358 $
+#   	$Revision: 65506 $
 #
 # --
 #
@@ -10,12 +11,12 @@
 
 require 'rdoc/ri/driver'
 
-require "irb/cmd/nop.rb"
+require_relative "nop"
 
 # :stopdoc:
 module IRB
   module ExtendCommand
-    class Help<Nop
+    class Help < Nop
       begin
         Ri = RDoc::RI::Driver.new
       rescue SystemExit

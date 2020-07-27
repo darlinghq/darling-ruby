@@ -1,7 +1,7 @@
+# frozen_string_literal: false
 require 'test/unit'
 
 require 'tempfile'
-require_relative 'envutil'
 require 'tmpdir'
 
 class TestRequire < Test::Unit::TestCase
@@ -14,30 +14,28 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_invalid_shared_object
-    t = Tempfile.new(["test_ruby_test_require", ".so"])
-    t.puts "dummy"
-    t.close
+    Tempfile.create(["test_ruby_test_require", ".so"]) {|t|
+      t.puts "dummy"
+      t.close
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
-      $:.replace([IO::NULL])
-      begin
-        require \"#{ t.path }\"
-      rescue LoadError
-        p :ok
-      end
-    INPUT
-    t.close(true)
+      assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}")
+      begin;
+        $:.replace([IO::NULL])
+        assert_raise(LoadError) do
+          require \"#{ t.path }\"
+        end
+      end;
+    }
   end
 
   def test_require_too_long_filename
-    assert_in_out_err(["RUBYOPT"=>nil], <<-INPUT, %w(:ok), [])
+    assert_separately(["RUBYOPT"=>nil], "#{<<~"begin;"}\n#{<<~"end;"}")
+    begin;
       $:.replace([IO::NULL])
-      begin
+      assert_raise(LoadError) do
         require '#{ "foo/" * 10000 }foo'
-      rescue LoadError
-        p :ok
       end
-    INPUT
+    end;
 
     begin
       assert_in_out_err(["-S", "-w", "foo/" * 1024 + "foo"], "") do |r, e|
@@ -54,34 +52,129 @@ class TestRequire < Test::Unit::TestCase
   def test_require_nonascii
     bug3758 = '[ruby-core:31915]'
     ["\u{221e}", "\x82\xa0".force_encoding("cp932")].each do |path|
-      e = assert_raise(LoadError, bug3758) {require path}
-      assert_match(/#{path}\z/, e.message, bug3758)
+      assert_raise_with_message(LoadError, /#{path}\z/, bug3758) {require path}
     end
   end
 
   def test_require_nonascii_path
     bug8165 = '[ruby-core:53733] [Bug #8165]'
+    encoding = 'filesystem'
+    assert_require_nonascii_path(encoding, bug8165)
+  end
+
+  def test_require_insecure_path
+    assert_require_insecure_path("foo")
+    encoding = 'filesystem'
+    assert_require_insecure_path(nil, encoding)
+  end
+
+  def test_require_nonascii_path_utf8
+    bug8676 = '[ruby-core:56136] [Bug #8676]'
+    encoding = Encoding::UTF_8
+    return if Encoding.find('filesystem') == encoding
+    assert_require_nonascii_path(encoding, bug8676)
+  end
+
+  def test_require_insecure_path_utf8
+    encoding = Encoding::UTF_8
+    return if Encoding.find('filesystem') == encoding
+    assert_require_insecure_path(nil, encoding)
+  end
+
+  def test_require_nonascii_path_shift_jis
+    bug8676 = '[ruby-core:56136] [Bug #8676]'
+    encoding = Encoding::Shift_JIS
+    return if Encoding.find('filesystem') == encoding
+    assert_require_nonascii_path(encoding, bug8676)
+  end
+
+  def test_require_insecure_path_shift_jis
+    encoding = Encoding::Shift_JIS
+    return if Encoding.find('filesystem') == encoding
+    assert_require_insecure_path(nil, encoding)
+  end
+
+  case RUBY_PLATFORM
+  when /cygwin/, /mswin/, /mingw/, /darwin/
+    def self.ospath_encoding(path)
+      Encoding::UTF_8
+    end
+  else
+    def self.ospath_encoding(path)
+      path.encoding
+    end
+  end
+
+  SECURITY_WARNING =
+    if /mswin|mingw/ =~ RUBY_PLATFORM
+      nil
+    else
+      proc do |require_path|
+        $SAFE = 1
+        require(require_path)
+      ensure
+        $SAFE = 0
+      end
+    end
+
+  def prepare_require_path(dir, encoding)
     Dir.mktmpdir {|tmp|
-      encoding = /mswin|mingw/ =~ RUBY_PLATFORM ? 'filesystem' : 'UTF-8'
-      dir = "\u3042" * 5
       begin
         require_path = File.join(tmp, dir, 'foo.rb').encode(encoding)
       rescue
         skip "cannot convert path encoding to #{encoding}"
       end
       Dir.mkdir(File.dirname(require_path))
-      open(require_path, "wb") {}
-      assert_separately(%w[--disable=gems], <<-INPUT)
+      open(require_path, "wb") {|f| f.puts '$:.push __FILE__'}
+      begin
+        load_path = $:.dup
+        features = $".dup
+        yield require_path
+      ensure
+        $:.replace(load_path)
+        $".replace(features)
+      end
+    }
+  end
+
+  def assert_require_nonascii_path(encoding, bug)
+    prepare_require_path("\u3042" * 5, encoding) {|require_path|
+      begin
         # leave paths for require encoding objects
-        bug = "#{bug8165} require #{encoding} path"
+        bug = "#{bug} require #{encoding} path"
         require_path = "#{require_path}"
-        enc_path = Regexp.new(Regexp.escape(RUBY_PLATFORM))
-        $:.replace([IO::NULL] + $:.reject {|path| enc_path !~ path})
+        $:.clear
         assert_nothing_raised(LoadError, bug) {
           assert(require(require_path), bug)
+          assert_equal(self.class.ospath_encoding(require_path), $:.last.encoding, '[Bug #8753]')
           assert(!require(require_path), bug)
         }
-      INPUT
+      end
+    }
+  end
+
+  def assert_require_insecure_path(dirname, encoding = nil)
+    return unless SECURITY_WARNING
+    dirname ||= "\u3042" * 5
+    encoding ||= dirname.encoding
+    prepare_require_path(dirname, encoding) {|require_path|
+      require_path.untaint
+      require(require_path)
+      $".pop
+      File.chmod(0777, File.dirname(require_path))
+      ospath = (require_path.encode('filesystem') rescue
+                require_path.encode(self.class.ospath_encoding(require_path)))
+      e = nil
+      stderr = EnvUtil.verbose_warning do
+        e = assert_raise(SecurityError) do
+          SECURITY_WARNING.call(require_path)
+        end
+      end
+      assert_include(e.message, "loading from unsafe path")
+      assert_include(stderr, "Insecure world writable dir")
+      require_path = require_path.encode(self.class.ospath_encoding(require_path))
+      assert_include(e.message, require_path)
+      assert_include(stderr, File.dirname(require_path))
     }
   end
 
@@ -114,31 +207,37 @@ class TestRequire < Test::Unit::TestCase
   def test_require_path_home_3
     env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
 
-    t = Tempfile.new(["test_ruby_test_require", ".rb"])
-    t.puts "p :ok"
-    t.close
+    Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
+      t.puts "p :ok"
+      t.close
 
-    ENV["RUBYPATH"] = "~"
-    ENV["HOME"] = t.path
-    assert_in_out_err(%w(-S test_ruby_test_require), "", [], /\(LoadError\)/)
+      ENV["RUBYPATH"] = "~"
+      ENV["HOME"] = t.path
+      assert_in_out_err(%w(-S test_ruby_test_require), "", [], /\(LoadError\)/)
 
-    ENV["HOME"], name = File.split(t.path)
-    assert_in_out_err(["-S", name], "", %w(:ok), [])
-
+      ENV["HOME"], name = File.split(t.path)
+      assert_in_out_err(["-S", name], "", %w(:ok), [])
+    }
   ensure
     env_rubypath ? ENV["RUBYPATH"] = env_rubypath : ENV.delete("RUBYPATH")
     env_home ? ENV["HOME"] = env_home : ENV.delete("HOME")
-    t.close(true)
   end
 
   def test_require_with_unc
-    ruby = File.expand_path(EnvUtil.rubybin).sub(/\A(\w):/, '//127.0.0.1/\1$/')
-    skip "local drive #$1: is not shared" unless File.exist?(ruby)
-    pid = nil
-    assert_nothing_raised {pid = spawn(ruby, "-rabbrev", "-e0")}
-    ret, status = Process.wait2(pid)
-    assert_equal(pid, ret)
-    assert_predicate(status, :success?)
+    Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
+      t.puts "puts __FILE__"
+      t.close
+
+      path = File.expand_path(t.path).sub(/\A(\w):/, '//127.0.0.1/\1$')
+      skip "local drive #$1: is not shared" unless File.exist?(path)
+      args = ['--disable-gems', "-I#{File.dirname(path)}"]
+      assert_in_out_err(args, "#{<<~"END;"}", [path], [])
+      begin
+        require '#{File.basename(path)}'
+      rescue Errno::EPERM
+      end
+      END;
+    }
   end if /mswin|mingw/ =~ RUBY_PLATFORM
 
   def test_require_twice
@@ -154,6 +253,26 @@ class TestRequire < Test::Unit::TestCase
     end
   end
 
+  def assert_syntax_error_backtrace
+    Dir.mktmpdir do |tmp|
+      req = File.join(tmp, "test.rb")
+      File.write(req, "'\n")
+      e = assert_raise_with_message(SyntaxError, /unterminated/) {
+        yield req
+      }
+      assert_not_nil(bt = e.backtrace)
+      assert_not_empty(bt.find_all {|b| b.start_with? __FILE__})
+    end
+  end
+
+  def test_require_syntax_error
+    assert_syntax_error_backtrace {|req| require req}
+  end
+
+  def test_load_syntax_error
+    assert_syntax_error_backtrace {|req| load req}
+  end
+
   def test_define_class
     begin
       require "socket"
@@ -161,33 +280,24 @@ class TestRequire < Test::Unit::TestCase
       return
     end
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
+    assert_separately([], <<-INPUT)
       BasicSocket = 1
-      begin
+      assert_raise(TypeError) do
         require 'socket'
-        p :ng
-      rescue TypeError
-        p :ok
       end
     INPUT
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
+    assert_separately([], <<-INPUT)
       class BasicSocket; end
-      begin
+      assert_raise(TypeError) do
         require 'socket'
-        p :ng
-      rescue TypeError
-        p :ok
       end
     INPUT
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
+    assert_separately([], <<-INPUT)
       class BasicSocket < IO; end
-      begin
+      assert_nothing_raised do
         require 'socket'
-        p :ok
-      rescue Exception
-        p :ng
       end
     INPUT
   end
@@ -199,36 +309,27 @@ class TestRequire < Test::Unit::TestCase
       return
     end
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
+    assert_separately([], <<-INPUT)
       module Zlib; end
       Zlib::Error = 1
-      begin
+      assert_raise(TypeError) do
         require 'zlib'
-        p :ng
-      rescue TypeError
-        p :ok
       end
     INPUT
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
+    assert_separately([], <<-INPUT)
       module Zlib; end
       class Zlib::Error; end
-      begin
+      assert_raise(TypeError) do
         require 'zlib'
-        p :ng
-      rescue NameError
-        p :ok
       end
     INPUT
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
+    assert_separately([], <<-INPUT)
       module Zlib; end
       class Zlib::Error < StandardError; end
-      begin
+      assert_nothing_raised do
         require 'zlib'
-        p :ok
-      rescue Exception
-        p :ng
       end
     INPUT
   end
@@ -240,13 +341,10 @@ class TestRequire < Test::Unit::TestCase
       return
     end
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
+    assert_separately([], <<-INPUT)
       Zlib = 1
-      begin
+      assert_raise(TypeError) do
         require 'zlib'
-        p :ng
-      rescue TypeError
-        p :ok
       end
     INPUT
   end
@@ -258,100 +356,101 @@ class TestRequire < Test::Unit::TestCase
       return
     end
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
+    assert_separately([], <<-INPUT)
       class BasicSocket < IO; end
       class Socket < BasicSocket; end
       Socket::Constants = 1
-      begin
+      assert_raise(TypeError) do
         require 'socket'
-        p :ng
-      rescue TypeError
-        p :ok
       end
     INPUT
   end
 
   def test_load
-    t = Tempfile.new(["test_ruby_test_require", ".rb"])
-    t.puts "module Foo; end"
-    t.puts "at_exit { p :wrap_end }"
-    t.puts "at_exit { raise 'error in at_exit test' }"
-    t.puts "p :ok"
-    t.close
+    Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
+      t.puts "module Foo; end"
+      t.puts "at_exit { p :wrap_end }"
+      t.puts "at_exit { raise 'error in at_exit test' }"
+      t.puts "p :ok"
+      t.close
 
-    assert_in_out_err([], <<-INPUT, %w(:ok :end :wrap_end), /error in at_exit test/)
-      load(#{ t.path.dump }, true)
-      GC.start
-      p :end
-    INPUT
+      assert_in_out_err([], <<-INPUT, %w(:ok :end :wrap_end), /error in at_exit test/)
+        load(#{ t.path.dump }, true)
+        GC.start
+        p :end
+      INPUT
 
-    assert_raise(ArgumentError) { at_exit }
-    t.close(true)
+      assert_raise(ArgumentError) { at_exit }
+    }
   end
 
-  def test_load2  # [ruby-core:25039]
-    t = Tempfile.new(["test_ruby_test_require", ".rb"])
-    t.puts "Hello = 'hello'"
-    t.puts "class Foo"
-    t.puts "  p Hello"
-    t.puts "end"
-    t.close
+  def test_load_scope
+    bug1982 = '[ruby-core:25039] [Bug #1982]'
+    Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
+      t.puts "Hello = 'hello'"
+      t.puts "class Foo"
+      t.puts "  p Hello"
+      t.puts "end"
+      t.close
 
-    assert_in_out_err([], <<-INPUT, %w("hello"), [])
-      load(#{ t.path.dump }, true)
-    INPUT
-    t.close(true)
+      assert_in_out_err([], <<-INPUT, %w("hello"), [], bug1982)
+        load(#{ t.path.dump }, true)
+      INPUT
+    }
+  end
+
+  def test_load_ospath
+    bug = '[ruby-list:49994] path in ospath'
+    base = "test_load\u{3042 3044 3046 3048 304a}".encode(Encoding::Windows_31J)
+    path = nil
+    Tempfile.create([base, ".rb"]) do |t|
+      path = t.path
+
+      assert_raise_with_message(LoadError, /#{base}/) {
+        load(File.join(File.dirname(path), base))
+      }
+
+      t.puts "warn 'ok'"
+      t.close
+      assert_include(path, base)
+      assert_warn("ok\n", bug) {
+        assert_nothing_raised(LoadError, bug) {
+          load(path)
+        }
+      }
+    end
   end
 
   def test_tainted_loadpath
-    t = Tempfile.new(["test_ruby_test_require", ".rb"])
-    abs_dir, file = File.split(t.path)
-    abs_dir = File.expand_path(abs_dir).untaint
+    Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
+      abs_dir, file = File.split(t.path)
+      abs_dir = File.expand_path(abs_dir).untaint
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
-      abs_dir = "#{ abs_dir }"
-      $: << abs_dir
-      require "#{ file }"
-      p :ok
-    INPUT
+      assert_separately([], <<-INPUT)
+        abs_dir = "#{ abs_dir }"
+        $: << abs_dir
+        assert_nothing_raised {require "#{ file }"}
+      INPUT
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
-      abs_dir = "#{ abs_dir }"
-      $: << abs_dir.taint
-      require "#{ file }"
-      p :ok
-    INPUT
+      assert_separately([], <<-INPUT)
+        abs_dir = "#{ abs_dir }"
+        $: << abs_dir.taint
+        assert_nothing_raised {require "#{ file }"}
+      INPUT
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
-      abs_dir = "#{ abs_dir }"
-      $: << abs_dir.taint
-      $SAFE = 1
-      begin
-        require "#{ file }"
-      rescue SecurityError
-        p :ok
-      end
-    INPUT
+      assert_separately([], <<-INPUT)
+        abs_dir = "#{ abs_dir }"
+        $: << abs_dir.taint
+        $SAFE = 1
+        assert_raise(SecurityError) {require "#{ file }"}
+      INPUT
 
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
-      abs_dir = "#{ abs_dir }"
-      $: << abs_dir.taint
-      $SAFE = 1
-      begin
-        require "#{ file }"
-      rescue SecurityError
-        p :ok
-      end
-    INPUT
-
-    assert_in_out_err([], <<-INPUT, %w(:ok), [])
-      abs_dir = "#{ abs_dir }"
-      $: << abs_dir << 'elsewhere'.taint
-      require "#{ file }"
-      p :ok
-    INPUT
-
-    t.close(true)
+      assert_separately([], <<-INPUT)
+        abs_dir = "#{ abs_dir }"
+        $: << abs_dir << 'elsewhere'.taint
+        assert_nothing_raised {require "#{ file }"}
+      INPUT
+    }
   end
 
   def test_relative
@@ -387,9 +486,9 @@ class TestRequire < Test::Unit::TestCase
         File.open("a/tst.rb", "w") {|f| f.puts 'require_relative "lib"' }
         begin
           File.symlink("../a/tst.rb", "b/tst.rb")
-          result = IO.popen([EnvUtil.rubybin, "b/tst.rb"]).read
+          result = IO.popen([EnvUtil.rubybin, "b/tst.rb"], &:read)
           assert_equal("a/lib.rb\n", result, "[ruby-dev:40040]")
-        rescue NotImplementedError
+        rescue NotImplementedError, Errno::EACCES
           skip "File.symlink is not implemented"
         end
       }
@@ -405,65 +504,75 @@ class TestRequire < Test::Unit::TestCase
 
   def test_race_exception
     bug5754 = '[ruby-core:41618]'
-    tmp = Tempfile.new(%w"bug5754 .rb")
-    path = tmp.path
-    tmp.print %{\
-      th = Thread.current
-      t = th[:t]
-      scratch = th[:scratch]
+    path = nil
+    stderr = $stderr
+    verbose = $VERBOSE
+    Tempfile.create(%w"bug5754 .rb") {|tmp|
+      path = tmp.path
+      tmp.print "#{<<~"begin;"}\n#{<<~"end;"}"
+      begin;
+        th = Thread.current
+        t = th[:t]
+        scratch = th[:scratch]
 
-      if scratch.empty?
-        scratch << :pre
-        Thread.pass until t.stop?
-        raise RuntimeError
-      else
-        scratch << :post
+        if scratch.empty?
+          scratch << :pre
+          Thread.pass until t.stop?
+          raise RuntimeError
+        else
+          scratch << :post
+        end
+      end;
+      tmp.close
+
+      class << (output = "")
+        alias write concat
       end
+      $stderr = output
+
+      start = false
+
+      scratch = []
+      t1_res = nil
+      t2_res = nil
+
+      t1 = Thread.new do
+        Thread.pass until start
+        begin
+          require(path)
+        rescue RuntimeError
+        end
+
+        t1_res = require(path)
+      end
+
+      t2 = Thread.new do
+        Thread.pass until scratch[0]
+        t2_res = require(path)
+      end
+
+      t1[:scratch] = t2[:scratch] = scratch
+      t1[:t] = t2
+      t2[:t] = t1
+
+      $VERBOSE = true
+      start = true
+
+      assert_nothing_raised(ThreadError, bug5754) {t1.join}
+      assert_nothing_raised(ThreadError, bug5754) {t2.join}
+
+      $VERBOSE = false
+
+      assert_equal(true, (t1_res ^ t2_res), bug5754 + " t1:#{t1_res} t2:#{t2_res}")
+      assert_equal([:pre, :post], scratch, bug5754)
+
+      assert_match(/circular require/, output)
+      assert_match(/in #{__method__}'$/o, output)
     }
-    tmp.close
-
-    # "circular require" warnings to $stderr, but backtraces to stderr
-    # in C-level.  And redirecting stderr to a pipe seems to change
-    # some blocking timings and causes a deadlock, so run in a
-    # separated process for the time being.
-    assert_separately(["-w", "-", path, bug5754], <<-'end;', ignore_stderr: true)
-    path, bug5754 = *ARGV
-    start = false
-
-    scratch = []
-    t1_res = nil
-    t2_res = nil
-
-    t1 = Thread.new do
-      Thread.pass until start
-      begin
-        require(path)
-      rescue RuntimeError
-      end
-
-      t1_res = require(path)
-    end
-
-    t2 = Thread.new do
-      Thread.pass until scratch[0]
-      t2_res = require(path)
-    end
-
-    t1[:scratch] = t2[:scratch] = scratch
-    t1[:t] = t2
-    t2[:t] = t1
-
-    start = true
-
-    assert_nothing_raised(ThreadError, bug5754) {t1.join}
-    assert_nothing_raised(ThreadError, bug5754) {t2.join}
-
-    assert_equal(true, (t1_res ^ t2_res), bug5754 + " t1:#{t1_res} t2:#{t2_res}")
-    assert_equal([:pre, :post], scratch, bug5754)
-    end;
   ensure
+    $VERBOSE = verbose
+    $stderr = stderr
     $".delete(path)
-    tmp.close(true) if tmp
   end
 
   def test_loaded_features_encoding
@@ -476,7 +585,7 @@ class TestRequire < Test::Unit::TestCase
       $: << tmp
       open(File.join(tmp, "foo.rb"), "w") {}
       require "foo"
-      assert(Encoding.compatible?(tmp, $"[0]), bug6377)
+      assert_send([Encoding, :compatible?, tmp, $"[0]], bug6377)
     }
   ensure
     $:.replace(loadpath)
@@ -493,7 +602,8 @@ class TestRequire < Test::Unit::TestCase
         open(File.join("b", "bar.rb"), "w") {|f|
           f.puts "p :ok"
         }
-        assert_in_out_err([], <<-INPUT, %w(:ok), [], bug7158)
+        assert_in_out_err([], "#{<<~"begin;"}\n#{<<~"end;"}", %w(:ok), [], bug7158)
+        begin;
           $:.replace([IO::NULL])
           $: << "."
           Dir.chdir("a")
@@ -502,7 +612,7 @@ class TestRequire < Test::Unit::TestCase
           p :ng unless require "bar"
           Dir.chdir("..")
           p :ng if require "b/bar"
-        INPUT
+        end;
       }
     }
   end
@@ -512,7 +622,8 @@ class TestRequire < Test::Unit::TestCase
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
         open("foo.rb", "w") {}
-        assert_in_out_err([], <<-INPUT, %w(:ok), [], bug7158)
+        assert_in_out_err([], "#{<<~"begin;"}\n#{<<~"end;"}", %w(:ok), [], bug7158)
+        begin;
           $:.replace([IO::NULL])
           a = Object.new
           def a.to_str
@@ -522,7 +633,7 @@ class TestRequire < Test::Unit::TestCase
           require "foo"
           last_path = $:.pop
           p :ok if last_path == a && last_path.class == Object
-        INPUT
+        end;
       }
     }
   end
@@ -534,14 +645,15 @@ class TestRequire < Test::Unit::TestCase
         open("foo.rb", "w") {}
         Dir.mkdir("a")
         open(File.join("a", "bar.rb"), "w") {}
-        assert_in_out_err([], <<-INPUT, %w(:ok), [], bug7158)
+        assert_in_out_err([], "#{<<~"begin;"}\n#{<<~"end;"}", %w(:ok), [], bug7158)
+        begin;
           $:.replace([IO::NULL])
           $: << '~'
           ENV['HOME'] = "#{tmp}"
           require "foo"
           ENV['HOME'] = "#{tmp}/a"
           p :ok if require "bar"
-        INPUT
+        end;
       }
     }
   end
@@ -551,7 +663,8 @@ class TestRequire < Test::Unit::TestCase
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
         open("foo.rb", "w") {}
-        assert_in_out_err(["RUBYOPT"=>nil], <<-INPUT, %w(:ok), [], bug7158)
+        assert_in_out_err([{"RUBYOPT"=>nil}, '--disable-gems'], "#{<<~"begin;"}\n#{<<~"end;"}", %w(:ok), [], bug7158)
+        begin;
           $:.replace([IO::NULL])
           a = Object.new
           def a.to_path
@@ -561,13 +674,14 @@ class TestRequire < Test::Unit::TestCase
           begin
             require "foo"
             p [:ng, $LOAD_PATH, ENV['RUBYLIB']]
-          rescue LoadError
+          rescue LoadError => e
+            raise unless e.path == "foo"
           end
           def a.to_path
             "#{tmp}"
           end
           p :ok if require "foo"
-        INPUT
+        end;
       }
     }
   end
@@ -577,7 +691,8 @@ class TestRequire < Test::Unit::TestCase
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
         open("foo.rb", "w") {}
-        assert_in_out_err(["RUBYOPT"=>nil], <<-INPUT, %w(:ok), [], bug7158)
+        assert_in_out_err([{"RUBYOPT"=>nil}, '--disable-gems'], "#{<<~"begin;"}\n#{<<~"end;"}", %w(:ok), [], bug7158)
+        begin;
           $:.replace([IO::NULL])
           a = Object.new
           def a.to_str
@@ -587,13 +702,14 @@ class TestRequire < Test::Unit::TestCase
           begin
             require "foo"
             p [:ng, $LOAD_PATH, ENV['RUBYLIB']]
-          rescue LoadError
+          rescue LoadError => e
+            raise unless e.path == "foo"
           end
           def a.to_str
             "#{tmp}"
           end
           p :ok if require "foo"
-        INPUT
+        end;
       }
     }
   end
@@ -605,7 +721,8 @@ class TestRequire < Test::Unit::TestCase
         open("foo.rb", "w") {}
         Dir.mkdir("a")
         open(File.join("a", "bar.rb"), "w") {}
-        assert_in_out_err([], <<-INPUT, %w(:ok), [], bug7383)
+        assert_in_out_err(['--disable-gems'], "#{<<~"begin;"}\n#{<<~"end;"}", %w(:ok), [], bug7383)
+        begin;
           $:.replace([IO::NULL])
           $:.#{add} "#{tmp}"
           $:.#{add} "#{tmp}/a"
@@ -614,10 +731,14 @@ class TestRequire < Test::Unit::TestCase
           # Expanded load path cache should be rebuilt.
           begin
             require "bar"
-          rescue LoadError
-            p :ok
+          rescue LoadError => e
+            if e.path == "bar"
+              p :ok
+            else
+              raise
+            end
           end
-        INPUT
+        end;
       }
     }
   end
@@ -635,34 +756,145 @@ class TestRequire < Test::Unit::TestCase
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
         open("bar.rb", "w") {|f| f.puts 'TOPLEVEL_BINDING.eval("lib = 2")' }
-        assert_in_out_err(%w[-r./bar.rb], <<-INPUT, %w([:lib] 2), [], bug7536)
+        assert_in_out_err(%w[-r./bar.rb], "#{<<~"begin;"}\n#{<<~"end;"}", %w([:lib] 2), [], bug7536)
+        begin;
           puts TOPLEVEL_BINDING.eval("local_variables").inspect
           puts TOPLEVEL_BINDING.eval("lib").inspect
-        INPUT
+        end;
       }
     }
   end
 
   def test_require_with_loaded_features_pop
     bug7530 = '[ruby-core:50645]'
-    script = Tempfile.new(%w'bug-7530- .rb')
-    script.close
-    assert_in_out_err([{"RUBYOPT" => nil}, "-", script.path], <<-INPUT, %w(:ok), [], bug7530)
-      PATH = ARGV.shift
-      THREADS = 2
-      ITERATIONS_PER_THREAD = 1000
+    Tempfile.create(%w'bug-7530- .rb') {|script|
+      script.close
+      assert_in_out_err([{"RUBYOPT" => nil}, "-", script.path], "#{<<~"begin;"}\n#{<<~"end;"}", %w(:ok), [], bug7530, timeout: 60)
+      begin;
+        PATH = ARGV.shift
+        THREADS = 4
+        ITERATIONS_PER_THREAD = 1000
 
-      THREADS.times.map {
-        Thread.new do
-          ITERATIONS_PER_THREAD.times do
-            require PATH
-            $".pop
+        THREADS.times.map {
+          Thread.new do
+            ITERATIONS_PER_THREAD.times do
+              require PATH
+              $".delete_if {|p| Regexp.new(PATH) =~ p}
+            end
+          end
+        }.each(&:join)
+        p :ok
+      end;
+    }
+  end
+
+  def test_loading_fifo_threading_raise
+    Tempfile.create(%w'fifo .rb') {|f|
+      f.close
+      File.unlink(f.path)
+      File.mkfifo(f.path)
+      assert_separately(["-", f.path], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 3)
+      begin;
+        th = Thread.current
+        Thread.start {begin sleep(0.001) end until th.stop?; th.raise(IOError)}
+        assert_raise(IOError) do
+          load(ARGV[0])
+        end
+      end;
+    }
+  end if File.respond_to?(:mkfifo)
+
+  def test_loading_fifo_threading_success
+    Tempfile.create(%w'fifo .rb') {|f|
+      f.close
+      File.unlink(f.path)
+      File.mkfifo(f.path)
+
+      assert_separately(["-", f.path], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 3)
+      begin;
+        path = ARGV[0]
+        th = Thread.current
+        $ok = false
+        Thread.start {
+          begin
+            sleep(0.001)
+          end until th.stop?
+          open(path, File::WRONLY | File::NONBLOCK) {|fifo_w|
+            fifo_w.print "$ok = true\n__END__\n" # ensure finishing
+          }
+        }
+
+        load(path)
+        assert($ok)
+      end;
+    }
+  end if File.respond_to?(:mkfifo)
+
+  def test_loading_fifo_fd_leak
+    Tempfile.create(%w'fifo .rb') {|f|
+      f.close
+      File.unlink(f.path)
+      File.mkfifo(f.path)
+      assert_separately(["-", f.path], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 3)
+      begin;
+        Process.setrlimit(Process::RLIMIT_NOFILE, 50)
+        th = Thread.current
+        100.times do |i|
+          Thread.start {begin sleep(0.001) end until th.stop?; th.raise(IOError)}
+          assert_raise(IOError, "\#{i} time") do
+            begin
+              tap {tap {tap {load(ARGV[0])}}}
+            rescue LoadError
+              GC.start
+              retry
+            end
           end
         end
-      }.each(&:join)
-      p :ok
-    INPUT
-  ensure
-    script.close(true) if script
+      end;
+    }
+  end if File.respond_to?(:mkfifo) and defined?(Process::RLIMIT_NOFILE)
+
+  def test_throw_while_loading
+    Tempfile.create(%w'bug-11404 .rb') do |f|
+      f.puts 'sleep'
+      f.close
+
+      assert_separately(["-", f.path], "#{<<~"begin;"}\n#{<<~'end;'}")
+      begin;
+        path = ARGV[0]
+        class Error < RuntimeError
+          def exception(*)
+            begin
+              throw :blah
+            rescue UncaughtThrowError
+            end
+            self
+          end
+        end
+
+        assert_throw(:blah) do
+          x = Thread.current
+          Thread.start {
+            sleep 0.00001
+            x.raise Error.new
+          }
+          load path
+        end
+      end;
+    end
+  end
+
+  def test_symlink_load_path
+    Dir.mktmpdir {|tmp|
+      Dir.mkdir(File.join(tmp, "real"))
+      begin
+        File.symlink "real", File.join(tmp, "symlink")
+      rescue NotImplementedError, Errno::EACCES
+        skip "File.symlink is not implemented"
+      end
+      File.write(File.join(tmp, "real/a.rb"), "print __FILE__")
+      result = IO.popen([EnvUtil.rubybin, "-I#{tmp}/symlink", "-e", "require 'a.rb'"], &:read)
+      assert_operator(result, :end_with?, "/real/a.rb")
+    }
   end
 end

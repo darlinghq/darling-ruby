@@ -1,11 +1,10 @@
+# frozen_string_literal: true
 require 'rubygems/command'
 require 'rubygems/install_update_options'
 require 'rubygems/dependency_installer'
 require 'rubygems/local_remote_options'
 require 'rubygems/validator'
 require 'rubygems/version_option'
-require 'rubygems/install_message' # must come before rdoc for messaging
-require 'rubygems/rdoc'
 
 ##
 # Gem installer command line tool
@@ -23,7 +22,10 @@ class Gem::Commands::InstallCommand < Gem::Command
   def initialize
     defaults = Gem::DependencyInstaller::DEFAULT_OPTIONS.merge({
       :format_executable => false,
+      :lock              => true,
+      :suggest_alternate => true,
       :version           => Gem::Requirement.default,
+      :without_groups    => [],
     })
 
     super 'install', 'Install a gem into the local repository', defaults
@@ -34,13 +36,7 @@ class Gem::Commands::InstallCommand < Gem::Command
     add_version_option
     add_prerelease_option "to be installed. (Only for listed gems)"
 
-    add_option(:"Install/Update", '-g', '--file FILE',
-               'Read from a gem dependencies API file and',
-               'install the listed gems') do |v,o|
-      o[:gemdeps] = v
-    end
-
-    @installed_specs = nil
+    @installed_specs = []
   end
 
   def arguments # :nodoc:
@@ -49,7 +45,7 @@ class Gem::Commands::InstallCommand < Gem::Command
 
   def defaults_str # :nodoc:
     "--both --version '#{Gem::Requirement.default}' --document --no-force\n" +
-    "--install-dir #{Gem.dir}"
+    "--install-dir #{Gem.dir} --lock"
   end
 
   def description # :nodoc:
@@ -62,6 +58,25 @@ The wrapper allows you to choose among alternate gem versions using _version_.
 
 For example `rake _0.7.3_ --version` will run rake version 0.7.3 if a newer
 version is also installed.
+
+Gem Dependency Files
+====================
+
+RubyGems can install a consistent set of gems across multiple environments
+using `gem install -g` when a gem dependencies file (gem.deps.rb, Gemfile or
+Isolate) is present.  If no explicit file is given RubyGems attempts to find
+one in the current directory.
+
+When the RUBYGEMS_GEMDEPS environment variable is set to a gem dependencies
+file the gems from that file will be activated at startup time.  Set it to a
+specific filename or to "-" to have RubyGems automatically discover the gem
+dependencies file by walking up from the current directory.
+
+NOTE: Enabling automatic discovery on multiuser systems can lead to
+execution of arbitrary code when used from directories outside your control.
+
+Extension Install Failures
+==========================
 
 If an extension fails to compile during gem installation the gem
 specification is not written out, but the gem remains unpacked in the
@@ -102,6 +117,13 @@ to write the specification by hand.  For example:
   some_extension_gem (1.0)
   $
 
+Command Alias
+==========================
+
+You can use `i` command instead of `install`.
+
+  $ gem i GEMNAME
+
     EOF
   end
 
@@ -109,14 +131,49 @@ to write the specification by hand.  For example:
     "#{program_name} GEMNAME [GEMNAME ...] [options] -- --build-flags"
   end
 
-  def install_from_gemdeps(gf)
+  def check_install_dir # :nodoc:
+    if options[:install_dir] and options[:user_install]
+      alert_error "Use --install-dir or --user-install but not both"
+      terminate_interaction 1
+    end
+  end
+
+  def check_version # :nodoc:
+    if options[:version] != Gem::Requirement.default and
+         get_all_gem_names.size > 1
+      alert_error "Can't use --version with multiple gems. You can specify multiple gems with" \
+                  " version requirements using `gem install 'my_gem:1.0.0' 'my_other_gem:~>2.0.0'`"
+      terminate_interaction 1
+    end
+  end
+
+  def execute
+    if options.include? :gemdeps
+      install_from_gemdeps
+      return # not reached
+    end
+
+    @installed_specs = []
+
+    ENV.delete 'GEM_PATH' if options[:install_dir].nil?
+
+    check_install_dir
+    check_version
+
+    load_hooks
+
+    exit_code = install_gems
+
+    show_installed
+
+    terminate_interaction exit_code
+  end
+
+  def install_from_gemdeps # :nodoc:
     require 'rubygems/request_set'
     rs = Gem::RequestSet.new
-    rs.load_gemdeps gf
 
-    rs.resolve
-
-    specs = rs.install options do |req, inst|
+    specs = rs.install_from_gemdeps options do |req, inst|
       s = req.full_spec
 
       if inst
@@ -128,71 +185,130 @@ to write the specification by hand.  For example:
 
     @installed_specs = specs
 
-    raise Gem::SystemExitException, 0
+    terminate_interaction
   end
 
-  def execute
-    if gf = options[:gemdeps] then
-      install_from_gemdeps gf
-      return
+  def install_gem(name, version) # :nodoc:
+    return if options[:conservative] and
+      not Gem::Dependency.new(name, version).matching_specs.empty?
+
+    req = Gem::Requirement.create(version)
+
+    if options[:ignore_dependencies]
+      install_gem_without_dependencies name, req
+    else
+      inst = Gem::DependencyInstaller.new options
+      request_set = inst.resolve_dependencies name, req
+
+      if options[:explain]
+        puts "Gems to install:"
+
+        request_set.sorted_requests.each do |s|
+          puts "  #{s.full_name}"
+        end
+
+        return
+      else
+        @installed_specs.concat request_set.install options
+      end
+
+      show_install_errors inst.errors
+    end
+  end
+
+  def install_gem_without_dependencies(name, req) # :nodoc:
+    gem = nil
+
+    if local?
+      if name =~ /\.gem$/ and File.file? name
+        source = Gem::Source::SpecificFile.new name
+        spec = source.spec
+      else
+        source = Gem::Source::Local.new
+        spec = source.find_gem name, req
+      end
+      gem = source.download spec if spec
     end
 
-    @installed_specs = []
+    if remote? and not gem
+      dependency = Gem::Dependency.new name, req
+      dependency.prerelease = options[:prerelease]
 
-    ENV.delete 'GEM_PATH' if options[:install_dir].nil? and RUBY_VERSION > '1.9'
-
-    if options[:install_dir] and options[:user_install]
-      alert_error "Use --install-dir or --user-install but not both"
-      terminate_interaction 1
+      fetcher = Gem::RemoteFetcher.fetcher
+      gem = fetcher.download_to_cache dependency
     end
 
+    inst = Gem::Installer.at gem, options
+    inst.install
+
+    require 'rubygems/dependency_installer'
+    dinst = Gem::DependencyInstaller.new options
+    dinst.installed_gems.replace [inst.spec]
+
+    Gem.done_installing_hooks.each do |hook|
+      hook.call dinst, [inst.spec]
+    end unless Gem.done_installing_hooks.empty?
+
+    @installed_specs.push(inst.spec)
+  end
+
+  def install_gems # :nodoc:
     exit_code = 0
-
-    if options[:version] != Gem::Requirement.default &&
-        get_all_gem_names.size > 1 then
-      alert_error "Can't use --version w/ multiple gems. Use name:ver instead."
-      terminate_interaction 1
-    end
-
 
     get_all_gem_names_and_versions.each do |gem_name, gem_version|
       gem_version ||= options[:version]
+      domain = options[:domain]
+      domain = :local unless options[:suggest_alternate]
 
       begin
-        next if options[:conservative] and
-          not Gem::Dependency.new(gem_name, gem_version).matching_specs.empty?
-
-        inst = Gem::DependencyInstaller.new options
-        inst.install gem_name, Gem::Requirement.create(gem_version)
-
-        @installed_specs.push(*inst.installed_gems)
-
-        next unless errs = inst.errors
-
-        errs.each do |x|
-          next unless Gem::SourceFetchProblem === x
-
-          msg = "Unable to pull data from '#{x.source.uri}': #{x.error.message}"
-
-          alert_warning msg
-        end
+        install_gem gem_name, gem_version
       rescue Gem::InstallError => e
         alert_error "Error installing #{gem_name}:\n\t#{e.message}"
         exit_code |= 1
       rescue Gem::GemNotFoundException => e
-        show_lookup_failure e.name, e.version, e.errors, options[:domain]
+        show_lookup_failure e.name, e.version, e.errors, domain
+
+        exit_code |= 2
+      rescue Gem::UnsatisfiableDependencyError => e
+        show_lookup_failure e.name, e.version, e.errors, domain,
+                            "'#{gem_name}' (#{gem_version})"
 
         exit_code |= 2
       end
     end
 
-    unless @installed_specs.empty? then
-      gems = @installed_specs.length == 1 ? 'gem' : 'gems'
-      say "#{@installed_specs.length} #{gems} installed"
-    end
+    exit_code
+  end
 
-    raise Gem::SystemExitException, exit_code
+  ##
+  # Loads post-install hooks
+
+  def load_hooks # :nodoc:
+    if options[:install_as_default]
+      require 'rubygems/install_default_message'
+    else
+      require 'rubygems/install_message'
+    end
+    require 'rubygems/rdoc'
+  end
+
+  def show_install_errors(errors) # :nodoc:
+    return unless errors
+
+    errors.each do |x|
+      return unless Gem::SourceFetchProblem === x
+
+      msg = "Unable to pull data from '#{x.source.uri}': #{x.error.message}"
+
+      alert_warning msg
+    end
+  end
+
+  def show_installed # :nodoc:
+    return if @installed_specs.empty?
+
+    gems = @installed_specs.length == 1 ? 'gem' : 'gems'
+    say "#{@installed_specs.length} #{gems} installed"
   end
 
 end
-

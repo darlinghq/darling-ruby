@@ -1,9 +1,10 @@
-require 'rexml/rexml'
-require 'rexml/entity'
-require 'rexml/doctype'
-require 'rexml/child'
-require 'rexml/doctype'
-require 'rexml/parseexception'
+# frozen_string_literal: false
+require_relative 'security'
+require_relative 'entity'
+require_relative 'doctype'
+require_relative 'child'
+require_relative 'doctype'
+require_relative 'parseexception'
 
 module REXML
   # Represents text nodes in an XML document
@@ -32,7 +33,7 @@ module REXML
       VALID_XML_CHARS = Regexp.new('^['+
         VALID_CHAR.map { |item|
           case item
-          when Fixnum
+          when Integer
             [item].pack('U').force_encoding('utf-8')
           when Range
             [item.first, '-'.ord, item.last].pack('UUU').force_encoding('utf-8')
@@ -95,27 +96,28 @@ module REXML
 
       @raw = false
       @parent = nil
+      @entity_filter = nil
 
       if parent
         super( parent )
         @raw = parent.raw
       end
 
-      @raw = raw unless raw.nil?
-      @entity_filter = entity_filter
-      @normalized = @unnormalized = nil
-
       if arg.kind_of? String
         @string = arg.dup
-        @string.squeeze!(" \n\t") unless respect_whitespace
       elsif arg.kind_of? Text
-        @string = arg.to_s
+        @string = arg.instance_variable_get(:@string).dup
         @raw = arg.raw
+        @entity_filter = arg.instance_variable_get(:@entity_filter)
       elsif
         raise "Illegal argument of type #{arg.type} for Text constructor (#{arg})"
       end
 
-      @string.gsub!( /\r\n?/, "\n" )
+      @string.squeeze!(" \n\t") unless respect_whitespace
+      @string.gsub!(/\r\n?/, "\n")
+      @raw = raw unless raw.nil?
+      @entity_filter = entity_filter if entity_filter
+      clear_cache
 
       Text.check(@string, illegal, doctype) if @raw
     end
@@ -180,14 +182,19 @@ module REXML
 
 
     def clone
-      return Text.new(self)
+      return Text.new(self, true)
     end
 
 
     # Appends text to this text node.  The text is appended in the +raw+ mode
     # of this text node.
+    #
+    # +returns+ the text itself to enable method chain like
+    # 'text << "XXX" << "YYY"'.
     def <<( to_append )
       @string << to_append.gsub( /\r\n?/, "\n" )
+      clear_cache
+      self
     end
 
 
@@ -220,9 +227,7 @@ module REXML
     #   u.to_s   #-> "sean russell"
     def to_s
       return @string if @raw
-      return @normalized if @normalized
-
-      @normalized = Text::normalize( @string, doctype, @entity_filter )
+      @normalized ||= Text::normalize( @string, doctype, @entity_filter )
     end
 
     def inspect
@@ -243,8 +248,7 @@ module REXML
     #   u = Text.new( "sean russell", false, nil, true )
     #   u.value   #-> "sean russell"
     def value
-      return @unnormalized if @unnormalized
-      @unnormalized = Text::unnormalize( @string, doctype )
+      @unnormalized ||= Text::unnormalize( @string, doctype )
     end
 
     # Sets the contents of this text node.  This expects the text to be
@@ -256,21 +260,20 @@ module REXML
     #   e[0].value = "<a>"    # <a>&lt;a&gt;</a>
     def value=( val )
       @string = val.gsub( /\r\n?/, "\n" )
-      @unnormalized = nil
-      @normalized = nil
+      clear_cache
       @raw = false
     end
 
-     def wrap(string, width, addnewline=false)
-       # Recursively wrap string at width.
-       return string if string.length <= width
-       place = string.rindex(' ', width) # Position in string with last ' ' before cutoff
-       if addnewline then
-         return "\n" + string[0,place] + "\n" + wrap(string[place+1..-1], width)
-       else
-         return string[0,place] + "\n" + wrap(string[place+1..-1], width)
-       end
-     end
+    def wrap(string, width, addnewline=false)
+      # Recursively wrap string at width.
+      return string if string.length <= width
+      place = string.rindex(' ', width) # Position in string with last ' ' before cutoff
+      if addnewline then
+        return "\n" + string[0,place] + "\n" + wrap(string[place+1..-1], width)
+      else
+        return string[0,place] + "\n" + wrap(string[place+1..-1], width)
+      end
+    end
 
     def indent_text(string, level=1, style="\t", indentfirstline=true)
       return string if level < 0
@@ -288,7 +291,7 @@ module REXML
     # See REXML::Formatters
     #
     def write( writer, indent=-1, transitive=false, ie_hack=false )
-      Kernel.warn("#{self.class.name}.write is deprecated.  See REXML::Formatters")
+      Kernel.warn("#{self.class.name}.write is deprecated.  See REXML::Formatters", uplevel: 1)
       formatter = if indent > -1
           REXML::Formatters::Pretty.new( indent )
         else
@@ -331,6 +334,12 @@ module REXML
       out << copy
     end
 
+    private
+    def clear_cache
+      @normalized = nil
+      @unnormalized = nil
+    end
+
     # Reads text, substituting entities
     def Text::read_with_substitution( input, illegal=nil )
       copy = input.clone
@@ -368,7 +377,7 @@ module REXML
         doctype.entities.each_value do |entity|
           copy = copy.gsub( entity.value,
             "&#{entity.name};" ) if entity.value and
-              not( entity_filter and entity_filter.include?(entity) )
+              not( entity_filter and entity_filter.include?(entity.name) )
         end
       else
         # Replace all ampersands that aren't part of an entity
@@ -384,7 +393,7 @@ module REXML
       sum = 0
       string.gsub( /\r\n?/, "\n" ).gsub( REFERENCE ) {
         s = Text.expand($&, doctype, filter)
-        if sum + s.bytesize > REXML.entity_expansion_text_limit
+        if sum + s.bytesize > Security.entity_expansion_text_limit
           raise "entity expansion has grown too large"
         else
           sum += s.bytesize

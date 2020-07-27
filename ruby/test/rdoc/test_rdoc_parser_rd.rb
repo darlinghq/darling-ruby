@@ -1,4 +1,5 @@
-require 'rdoc/test_case'
+# frozen_string_literal: true
+require 'minitest_helper'
 
 class TestRDocParserRd < RDoc::TestCase
 
@@ -19,14 +20,7 @@ class TestRDocParserRd < RDoc::TestCase
   def teardown
     super
 
-    @tempfile.close
-  end
-
-  def mu_pp obj
-    s = ''
-    s = PP.pp obj, s
-    s = s.force_encoding Encoding.default_external if defined? Encoding
-    s.chomp
+    @tempfile.close!
   end
 
   def test_file

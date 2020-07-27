@@ -1,5 +1,5 @@
+# frozen_string_literal: false
 require 'test/unit'
-require_relative 'envutil'
 
 class TestProc < Test::Unit::TestCase
   def setup
@@ -77,6 +77,18 @@ class TestProc < Test::Unit::TestCase
     assert_equal(2, proc{|(x, y), z|[x,y]}.arity)
     assert_equal(1, proc{|(x, y), z=0|[x,y]}.arity)
     assert_equal(-4, proc{|x, *y, z, a|}.arity)
+    assert_equal(0, proc{|**|}.arity)
+    assert_equal(0, proc{|**o|}.arity)
+    assert_equal(1, proc{|x, **o|}.arity)
+    assert_equal(0, proc{|x=0, **o|}.arity)
+    assert_equal(1, proc{|x, y=0, **o|}.arity)
+    assert_equal(2, proc{|x, y=0, z, **o|}.arity)
+    assert_equal(-3, proc{|x, y=0, *z, w, **o|}.arity)
+
+    assert_equal(2, proc{|x, y=0, z, a:1|}.arity)
+    assert_equal(3, proc{|x, y=0, z, a:|}.arity)
+    assert_equal(-4, proc{|x, y, *rest, a:, b:, c:|}.arity)
+    assert_equal(3, proc{|x, y=0, z, a:, **o|}.arity)
 
     assert_equal(0, lambda{}.arity)
     assert_equal(0, lambda{||}.arity)
@@ -95,6 +107,13 @@ class TestProc < Test::Unit::TestCase
     assert_equal(2, lambda{|(x, y), z|[x,y]}.arity)
     assert_equal(-2, lambda{|(x, y), z=0|[x,y]}.arity)
     assert_equal(-4, lambda{|x, *y, z, a|}.arity)
+    assert_equal(-1, lambda{|**|}.arity)
+    assert_equal(-1, lambda{|**o|}.arity)
+    assert_equal(-2, lambda{|x, **o|}.arity)
+    assert_equal(-1, lambda{|x=0, **o|}.arity)
+    assert_equal(-2, lambda{|x, y=0, **o|}.arity)
+    assert_equal(-3, lambda{|x, y=0, z, **o|}.arity)
+    assert_equal(-3, lambda{|x, y=0, *z, w, **o|}.arity)
 
     assert_arity(0) {}
     assert_arity(0) {||}
@@ -104,6 +123,10 @@ class TestProc < Test::Unit::TestCase
     assert_arity(-3) {|x, *y, z|}
     assert_arity(-1) {|*x|}
     assert_arity(-1) {|*|}
+    assert_arity(-1) {|**o|}
+    assert_arity(-1) {|**|}
+    assert_arity(-2) {|x, *y, **|}
+    assert_arity(-3) {|x, *y, z, **|}
   end
 
   def m(x)
@@ -137,26 +160,34 @@ class TestProc < Test::Unit::TestCase
       $SAFE += 1
       proc {$SAFE}
     }.call
-    assert_equal(safe, $SAFE)
-    assert_equal(safe + 1, p.call)
-    assert_equal(safe, $SAFE)
 
+    assert_equal(safe + 1, $SAFE)
+    assert_equal(safe + 1, p.call)
+    assert_equal(safe + 1, $SAFE)
+
+    $SAFE = 0
     c.class_eval {define_method(:safe, p)}
     assert_equal(safe, x.safe)
-    assert_equal(safe, x.method(:safe).call)
-    assert_equal(safe, x.method(:safe).to_proc.call)
 
+    $SAFE = 0
     p = proc {$SAFE += 1}
     assert_equal(safe + 1, p.call)
-    assert_equal(safe, $SAFE)
+    assert_equal(safe + 1, $SAFE)
 
+    $SAFE = 0
     c.class_eval {define_method(:inc, p)}
     assert_equal(safe + 1, proc {x.inc; $SAFE}.call)
-    assert_equal(safe, $SAFE)
+    assert_equal(safe + 1, $SAFE)
+
+    $SAFE = 0
     assert_equal(safe + 1, proc {x.method(:inc).call; $SAFE}.call)
-    assert_equal(safe, $SAFE)
+    assert_equal(safe + 1, $SAFE)
+
+    $SAFE = 0
     assert_equal(safe + 1, proc {x.method(:inc).to_proc.call; $SAFE}.call)
-    assert_equal(safe, $SAFE)
+    assert_equal(safe + 1, $SAFE)
+  ensure
+    $SAFE = 0
   end
 
   def m2
@@ -182,7 +213,14 @@ class TestProc < Test::Unit::TestCase
     b = b.binding
     assert_instance_of(Binding, b, '[ruby-core:25589]')
     bug10432 = '[ruby-core:65919] [Bug #10432]'
-    assert_same(self, b.eval("self"), bug10432)
+    assert_same(self, b.receiver, bug10432)
+    assert_not_send [b, :local_variable_defined?, :value]
+    assert_raise(NameError) {
+      b.local_variable_get(:value)
+    }
+    assert_equal 42, b.local_variable_set(:value, 42)
+    assert_send [b, :local_variable_defined?, :value]
+    assert_equal 42, b.local_variable_get(:value)
   end
 
   def test_block_given_method
@@ -216,48 +254,66 @@ class TestProc < Test::Unit::TestCase
     assert_equal([false, false], m.call, "#{bug8341} nested without block")
   end
 
-  def test_curry
+  def test_curry_proc
     b = proc {|x, y, z| (x||0) + (y||0) + (z||0) }
     assert_equal(6, b.curry[1][2][3])
     assert_equal(6, b.curry[1, 2][3, 4])
     assert_equal(6, b.curry(5)[1][2][3][4][5])
     assert_equal(6, b.curry(5)[1, 2][3, 4][5])
     assert_equal(1, b.curry(1)[1])
+  end
 
+  def test_curry_proc_splat
     b = proc {|x, y, z, *w| (x||0) + (y||0) + (z||0) + w.inject(0, &:+) }
     assert_equal(6, b.curry[1][2][3])
     assert_equal(10, b.curry[1, 2][3, 4])
     assert_equal(15, b.curry(5)[1][2][3][4][5])
     assert_equal(15, b.curry(5)[1, 2][3, 4][5])
     assert_equal(1, b.curry(1)[1])
+  end
 
+  def test_curry_lambda
     b = lambda {|x, y, z| (x||0) + (y||0) + (z||0) }
     assert_equal(6, b.curry[1][2][3])
     assert_raise(ArgumentError) { b.curry[1, 2][3, 4] }
     assert_raise(ArgumentError) { b.curry(5) }
     assert_raise(ArgumentError) { b.curry(1) }
+  end
 
+  def test_curry_lambda_splat
     b = lambda {|x, y, z, *w| (x||0) + (y||0) + (z||0) + w.inject(0, &:+) }
     assert_equal(6, b.curry[1][2][3])
     assert_equal(10, b.curry[1, 2][3, 4])
     assert_equal(15, b.curry(5)[1][2][3][4][5])
     assert_equal(15, b.curry(5)[1, 2][3, 4][5])
     assert_raise(ArgumentError) { b.curry(1) }
+  end
 
+  def test_curry_no_arguments
     b = proc { :foo }
     assert_equal(:foo, b.curry[])
+  end
 
+  def test_curry_given_blocks
     b = lambda {|x, y, &blk| blk.call(x + y) }.curry
     b = b.call(2) { raise }
     b = b.call(3) {|x| x + 4 }
     assert_equal(9, b)
+  end
 
+  def test_lambda?
     l = proc {}
     assert_equal(false, l.lambda?)
     assert_equal(false, l.curry.lambda?, '[ruby-core:24127]')
+    assert_equal(false, proc(&l).lambda?)
+    assert_equal(false, lambda(&l).lambda?)
+    assert_equal(false, Proc.new(&l).lambda?)
     l = lambda {}
     assert_equal(true, l.lambda?)
     assert_equal(true, l.curry.lambda?, '[ruby-core:24127]')
+    assert_equal(true, proc(&l).lambda?)
+    assert_equal(true, lambda(&l).lambda?)
+    assert_equal(true, Proc.new(&l).lambda?)
   end
 
   def test_curry_ski_fib
@@ -292,16 +348,11 @@ class TestProc < Test::Unit::TestCase
     assert_equal(fib, [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89])
   end
 
-  def test_curry_from_knownbug
+  def test_curry_passed_block
     a = lambda {|x, y, &b| b }
     b = a.curry[1]
 
-    assert_equal(:ok,
-      if b.call(2){} == nil
-        :ng
-      else
-        :ok
-      end, 'moved from btest/knownbug, [ruby-core:15551]')
+    assert_not_nil(b.call(2){}, '[ruby-core:15551]: passed block to curried block')
   end
 
   def test_curry_instance_exec
@@ -354,6 +405,15 @@ class TestProc < Test::Unit::TestCase
     assert_equal([1, 2, 3], b.eval("[x, y, z]"))
   end
 
+  def test_binding_source_location
+    b, expected_location = binding, [__FILE__, __LINE__]
+    assert_equal(expected_location, b.source_location)
+
+    file, lineno = method(:source_location_test).to_proc.binding.source_location
+    assert_match(/^#{ Regexp.quote(__FILE__) }$/, file)
+    assert_equal(@@line_of_source_location_test, lineno, 'Bug #2427')
+  end
+
   def test_proc_lambda
     assert_raise(ArgumentError) { proc }
     assert_raise(ArgumentError) { lambda }
@@ -387,6 +447,7 @@ class TestProc < Test::Unit::TestCase
     t = Thread.new { sleep }
     assert_raise(ThreadError) { t.instance_eval { initialize { } } }
     t.kill
+    t.join
   end
 
   def test_to_proc
@@ -402,7 +463,7 @@ class TestProc < Test::Unit::TestCase
     assert_equal(:noreason, exc.reason)
   end
 
-  def test_binding2
+  def test_curry_binding
     assert_raise(ArgumentError) { proc {}.curry.binding }
   end
 
@@ -549,7 +610,7 @@ class TestProc < Test::Unit::TestCase
     assert_equal [1, 2, 3], pr.call([1,2,3,4,5,6])
   end
 
-  def test_proc_args_opt_signle
+  def test_proc_args_opt_single
     bug7621 = '[ruby-dev:46801]'
     pr = proc {|a=:a|
       a
@@ -1089,6 +1150,13 @@ class TestProc < Test::Unit::TestCase
   def pmo6(a, *b, c, &d) end
   def pmo7(a, b = :b, *c, d, &e) end
   def pma1((a), &b) a; end
+  def pmk1(**) end
+  def pmk2(**o) nil && o end
+  def pmk3(a, **o) nil && o end
+  def pmk4(a = nil, **o) nil && o end
+  def pmk5(a, b = nil, **o) nil && o end
+  def pmk6(a, b = nil, c, **o) nil && o end
+  def pmk7(a, b = nil, *c, d, **o) nil && o end
 
 
   def test_bound_parameters
@@ -1103,8 +1171,15 @@ class TestProc < Test::Unit::TestCase
     assert_equal([[:req, :a], [:rest, :b], [:req, :c], [:block, :d]], method(:pmo6).to_proc.parameters)
     assert_equal([[:req, :a], [:opt, :b], [:rest, :c], [:req, :d], [:block, :e]], method(:pmo7).to_proc.parameters)
     assert_equal([[:req], [:block, :b]], method(:pma1).to_proc.parameters)
+    assert_equal([[:keyrest]], method(:pmk1).to_proc.parameters)
+    assert_equal([[:keyrest, :o]], method(:pmk2).to_proc.parameters)
+    assert_equal([[:req, :a], [:keyrest, :o]], method(:pmk3).to_proc.parameters)
+    assert_equal([[:opt, :a], [:keyrest, :o]], method(:pmk4).to_proc.parameters)
+    assert_equal([[:req, :a], [:opt, :b], [:keyrest, :o]], method(:pmk5).to_proc.parameters)
+    assert_equal([[:req, :a], [:opt, :b], [:req, :c], [:keyrest, :o]], method(:pmk6).to_proc.parameters)
+    assert_equal([[:req, :a], [:opt, :b], [:rest, :c], [:req, :d], [:keyrest, :o]], method(:pmk7).to_proc.parameters)
 
-    assert_equal([], "".method(:upcase).to_proc.parameters)
+    assert_equal([], "".method(:empty?).to_proc.parameters)
     assert_equal([[:rest]], "".method(:gsub).to_proc.parameters)
     assert_equal([[:rest]], proc {}.curry.parameters)
   end
@@ -1115,7 +1190,9 @@ class TestProc < Test::Unit::TestCase
     assert_match(/^#<Proc:0x\h+ \(lambda\)>$/, method(:p).to_proc.to_s)
     x = proc {}
     x.taint
-    assert(x.to_s.tainted?)
+    assert_predicate(x.to_s, :tainted?)
+    name = "Proc\u{1f37b}"
+    assert_include(EnvUtil.labeled_class(name, Proc).new {}.to_s, name)
   end
 
   @@line_of_source_location_test = __LINE__ + 1
@@ -1178,7 +1255,10 @@ class TestProc < Test::Unit::TestCase
   def test_curry_with_trace
     # bug3751 = '[ruby-core:31871]'
     set_trace_func(proc {})
-    test_curry
+    methods.grep(/\Atest_curry/) do |test|
+      next if test == __method__
+      __send__(test)
+    end
   ensure
     set_trace_func(nil)
   end
@@ -1201,13 +1281,204 @@ class TestProc < Test::Unit::TestCase
     }
   end
 
-  def test_overriden_lambda
+  def test_overridden_lambda
     bug8345 = '[ruby-core:54687] [Bug #8345]'
     assert_normal_exit('def lambda; end; method(:puts).to_proc', bug8345)
   end
 
-  def test_overriden_proc
+  def test_overridden_proc
     bug8345 = '[ruby-core:54688] [Bug #8345]'
     assert_normal_exit('def proc; end; ->{}.curry', bug8345)
+  end
+
+  def get_binding if: 1, case: 2, when: 3, begin: 4, end: 5
+    a ||= 0
+    binding
+  end
+
+  def test_local_variables
+    b = get_binding
+    assert_equal(%i'if case when begin end a', b.local_variables)
+    a = tap {|;x, y| x = y; break binding.local_variables}
+    assert_equal(%i[a b x y], a.sort)
+  end
+
+  def test_local_variables_nested
+    b = tap {break binding}
+    assert_equal(%i[b], b.local_variables, '[ruby-dev:48351] [Bug #10001]')
+  end
+
+  def local_variables_of(bind)
+    this_should_not_be_in_bind = this_should_not_be_in_bind = 2
+    bind.local_variables
+  end
+
+  def test_local_variables_in_other_context
+    feature8773 = '[Feature #8773]'
+    assert_equal([:feature8773], local_variables_of(binding), feature8773)
+  end
+
+  def test_local_variable_get
+    b = get_binding
+    assert_equal(0, b.local_variable_get(:a))
+    assert_raise(NameError){ b.local_variable_get(:b) }
+
+    # access keyword named local variables
+    assert_equal(1, b.local_variable_get(:if))
+    assert_equal(2, b.local_variable_get(:case))
+    assert_equal(3, b.local_variable_get(:when))
+    assert_equal(4, b.local_variable_get(:begin))
+    assert_equal(5, b.local_variable_get(:end))
+  end
+
+  def test_local_variable_set
+    b = get_binding
+    b.local_variable_set(:a, 10)
+    b.local_variable_set(:b, 20)
+    assert_equal(10, b.local_variable_get(:a))
+    assert_equal(20, b.local_variable_get(:b))
+    assert_equal(10, b.eval("a"))
+    assert_equal(20, b.eval("b"))
+  end
+
+  def test_local_variable_set_wb
+    assert_ruby_status([], <<-'end;', '[Bug #13605]', timeout: 30)
+      b = binding
+      n = 20_000
+
+      n.times do |i|
+        v = rand(2_000)
+        name = "n#{v}"
+        value = Object.new
+        b.local_variable_set name, value
+      end
+    end;
+  end
+
+  def test_local_variable_defined?
+    b = get_binding
+    assert_equal(true, b.local_variable_defined?(:a))
+    assert_equal(false, b.local_variable_defined?(:b))
+  end
+
+  def test_binding_receiver
+    feature8779 = '[ruby-dev:47613] [Feature #8779]'
+
+    assert_same(self, binding.receiver, feature8779)
+
+    obj = Object.new
+    def obj.b; binding; end
+    assert_same(obj, obj.b.receiver, feature8779)
+  end
+
+  def test_proc_mark
+    assert_normal_exit(<<-'EOS')
+      def f
+        Enumerator.new{
+          100000.times {|i|
+            yield
+            s = "#{i}"
+          }
+        }
+      end
+
+      def g
+        x = proc{}
+        f(&x)
+      end
+      e = g
+      e.each {}
+    EOS
+  end
+
+  def test_prepended_call
+    assert_in_out_err([], "#{<<~"begin;"}\n#{<<~'end;'}", ["call"])
+    begin;
+      Proc.prepend Module.new {def call() puts "call"; super; end}
+      def m(&blk) blk.call; end
+      m {}
+    end;
+  end
+
+  def test_refined_call
+    assert_in_out_err([], "#{<<~"begin;"}\n#{<<~'end;'}", ["call"])
+    begin;
+      using Module.new {refine(Proc) {def call() puts "call"; super; end}}
+      def m(&blk) blk.call; end
+      m {}
+    end;
+  end
+
+  def method_for_test_proc_without_block_for_symbol
+    binding.eval('proc')
+  end
+
+  def test_proc_without_block_for_symbol
+    assert_equal('1', method_for_test_proc_without_block_for_symbol(&:to_s).call(1), '[Bug #14782]')
+  end
+
+  def test_compose
+    f = proc {|x| x * 2}
+    g = proc {|x| x + 1}
+
+    assert_equal(6, (f << g).call(2))
+    assert_equal(6, (g >> f).call(2))
+  end
+
+  def test_compose_with_multiple_args
+    f = proc {|x| x * 2}
+    g = proc {|x, y| x + y}
+
+    assert_equal(6, (f << g).call(1, 2))
+    assert_equal(6, (g >> f).call(1, 2))
+  end
+
+  def test_compose_with_block
+    f = proc {|x| x * 2}
+    g = proc {|&blk| blk.call(1) }
+
+    assert_equal(8, (f << g).call { |x| x + 3 })
+    assert_equal(8, (g >> f).call { |x| x + 3 })
+  end
+
+  def test_compose_with_lambda
+    f = lambda {|x| x * 2}
+    g = lambda {|x| x}
+
+    assert_predicate((f << g), :lambda?)
+    assert_predicate((g >> f), :lambda?)
+  end
+
+  def test_compose_with_method
+    f = proc {|x| x * 2}
+    c = Class.new {
+      def g(x) x + 1 end
+    }
+    g = c.new.method(:g)
+
+    assert_equal(6, (f << g).call(2))
+    assert_equal(5, (f >> g).call(2))
+  end
+
+  def test_compose_with_callable
+    f = proc {|x| x * 2}
+    c = Class.new {
+      def call(x) x + 1 end
+    }
+    g = c.new
+
+    assert_equal(6, (f << g).call(2))
+    assert_equal(5, (f >> g).call(2))
+  end
+
+  def test_compose_with_noncallable
+    f = proc {|x| x * 2}
+
+    assert_raise(NoMethodError) {
+      (f << 5).call(2)
+    }
+    assert_raise(NoMethodError) {
+      (f >> 5).call(2)
+    }
   end
 end

@@ -1,4 +1,5 @@
-require 'rdoc/test_case'
+# frozen_string_literal: true
+require 'minitest_helper'
 
 class TestRDocMarkupToMarkdown < RDoc::Markup::TextFormatterTestCase
 
@@ -352,6 +353,12 @@ words words words words
     result = @to.convert 'rdoc-garbage:C'
 
     assert_equal "C\n", result
+  end
+
+  def test_convert_RDOCLINK_image
+    result = @to.convert 'rdoc-image:/path/to/image.jpg'
+
+    assert_equal "![](/path/to/image.jpg)\n", result
   end
 
   def test_convert_TIDYLINK

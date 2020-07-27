@@ -1,70 +1,33 @@
+# frozen_string_literal: false
 begin
   require "readline"
 rescue LoadError
 else
   require "test/unit"
   require "tempfile"
+  require "timeout"
 end
 
 class TestReadline < Test::Unit::TestCase
   INPUTRC = "INPUTRC"
+  SAVED_ENV = %w[COLUMNS LINES]
 
   def setup
+    @saved_env = ENV.values_at(*SAVED_ENV)
     @inputrc, ENV[INPUTRC] = ENV[INPUTRC], IO::NULL
   end
 
   def teardown
     ENV[INPUTRC] = @inputrc
     Readline.instance_variable_set("@completion_proc", nil)
-  end
-
-  def test_safe_level_4
-    method_args =
-      [
-       ["readline"],
-       ["input=", $stdin],
-       ["output=", $stdout],
-       ["completion_proc=", proc {}],
-       ["completion_proc"],
-       ["completion_case_fold=", true],
-       ["completion_case_fold"],
-       ["vi_editing_mode"],
-       ["vi_editing_mode?"],
-       ["emacs_editing_mode"],
-       ["emacs_editing_mode?"],
-       ["completion_append_character=", "s"],
-       ["completion_append_character"],
-       ["basic_word_break_characters=", "s"],
-       ["basic_word_break_characters"],
-       ["completer_word_break_characters=", "s"],
-       ["completer_word_break_characters"],
-       ["basic_quote_characters=", "\\"],
-       ["basic_quote_characters"],
-       ["completer_quote_characters=", "\\"],
-       ["completer_quote_characters"],
-       ["filename_quote_characters=", "\\"],
-       ["filename_quote_characters"],
-       ["line_buffer"],
-       ["point"],
-       ["set_screen_size", 1, 1],
-       ["get_screen_size"],
-       ["pre_input_hook=", proc {}],
-       ["pre_input_hook"],
-       ["insert_text", ""],
-       ["redisplay"],
-       ["special_prefixes=", "$"],
-       ["special_prefixes"],
-      ]
-    method_args.each do |method_name, *args|
-      assert_raise(SecurityError, NotImplementedError,
-                    "method=<#{method_name}>") do
-        Thread.start {
-          $SAFE = 4
-          Readline.send(method_name.to_sym, *args)
-          assert(true)
-        }.join
-      end
+    begin
+      Readline.delete_text
+      Readline.point = 0
+    rescue NotImplementedError
     end
+    Readline.input = nil
+    Readline.output = nil
+    SAVED_ENV.each_with_index {|k, i| ENV[k] = @saved_env[i] }
   end
 
   if !/EditLine/n.match(Readline::VERSION)
@@ -72,30 +35,26 @@ class TestReadline < Test::Unit::TestCase
       with_temp_stdio do |stdin, stdout|
         stdin.write("hello\n")
         stdin.close
-        stdout.close
+        stdout.flush
         line = replace_stdio(stdin.path, stdout.path) {
           Readline.readline("> ", true)
         }
         assert_equal("hello", line)
         assert_equal(true, line.tainted?)
-        stdout.open
+        stdout.rewind
         assert_equal("> ", stdout.read(2))
         assert_equal(1, Readline::HISTORY.length)
         assert_equal("hello", Readline::HISTORY[0])
-        assert_raise(SecurityError) do
-          Thread.start {
-            $SAFE = 1
+        Thread.start {
+          $SAFE = 1
+          assert_raise(SecurityError) do
             replace_stdio(stdin.path, stdout.path) do
               Readline.readline("> ".taint)
             end
-          }.join
-        end
-        assert_raise(SecurityError) do
-          Thread.start {
-            $SAFE = 4
-            replace_stdio(stdin.path, stdout.path) { Readline.readline("> ") }
-          }.join
-        end
+          end
+        }.join
+      ensure
+        $SAFE = 0
       end
     end
 
@@ -118,15 +77,15 @@ class TestReadline < Test::Unit::TestCase
           actual_point = Readline.point
           actual_line_buffer = Readline.line_buffer
           stdin.write(" finish\n")
-          stdin.close
-          stdout.close
+          stdin.flush
+          stdout.flush
           return ["complete"]
         }
 
         stdin.write("first second\t")
         stdin.flush
         Readline.completion_append_character = " "
-        line = replace_stdio(stdin.path, stdout.path) {
+        replace_stdio(stdin.path, stdout.path) {
           Readline.readline("> ", false)
         }
         assert_equal("second", actual_text)
@@ -137,13 +96,13 @@ class TestReadline < Test::Unit::TestCase
         assert_equal(true, Readline.line_buffer.tainted?)
         assert_equal(22, Readline.point)
 
-        stdin.open
-        stdout.open
+        stdin.rewind
+        stdout.rewind
 
         stdin.write("first second\t")
         stdin.flush
         Readline.completion_append_character = nil
-        line = replace_stdio(stdin.path, stdout.path) {
+        replace_stdio(stdin.path, stdout.path) {
           Readline.readline("> ", false)
         }
         assert_equal("second", actual_text)
@@ -291,7 +250,10 @@ class TestReadline < Test::Unit::TestCase
     else
       results = %W"\xa1\xa1 \xa1\xa2".map {|s| s.force_encoding(locale)}
     end or
+    begin
+      return if assert_under_utf8
       skip("missing test for locale #{locale.name}")
+    end
     expected = results[0][0...1]
     Readline.completion_case_fold = false
     assert_equal(expected, with_pipe {|r, w| w << "\t"}, bug5941)
@@ -362,46 +324,95 @@ class TestReadline < Test::Unit::TestCase
     end
   end
 
+  def test_point
+    assert_equal(0, Readline.point)
+    Readline.insert_text('12345')
+    assert_equal(5, Readline.point)
+
+    assert_equal(4, Readline.point=(4))
+
+    Readline.insert_text('abc')
+    assert_equal(7, Readline.point)
+
+    assert_equal('1234abc5', Readline.line_buffer)
+  rescue NotImplementedError
+  end if !/EditLine/n.match(Readline::VERSION)
+
   def test_insert_text
-    begin
-      str = "test_insert_text"
-      assert_equal(Readline, Readline.insert_text(str))
-      assert_equal(str, Readline.line_buffer)
-      assert_equal(get_default_internal_encoding,
-                   Readline.line_buffer.encoding)
-    rescue NotImplementedError
-    end
+    str = "test_insert_text"
+    assert_equal(0, Readline.point)
+    assert_equal(Readline, Readline.insert_text(str))
+    assert_equal(str, Readline.line_buffer)
+    assert_equal(16, Readline.point)
+    assert_equal(get_default_internal_encoding,
+                 Readline.line_buffer.encoding)
+
+    Readline.delete_text(1, 3)
+    assert_equal("t_insert_text", Readline.line_buffer)
+    Readline.delete_text(11)
+    assert_equal("t_insert_te", Readline.line_buffer)
+    Readline.delete_text(-3...-1)
+    assert_equal("t_inserte", Readline.line_buffer)
+    Readline.delete_text(-3..-1)
+    assert_equal("t_inse", Readline.line_buffer)
+    Readline.delete_text(3..-3)
+    assert_equal("t_ise", Readline.line_buffer)
+    Readline.delete_text(3, 1)
+    assert_equal("t_ie", Readline.line_buffer)
+    Readline.delete_text(1..1)
+    assert_equal("tie", Readline.line_buffer)
+    Readline.delete_text(1...2)
+    assert_equal("te", Readline.line_buffer)
+    Readline.delete_text
+    assert_equal("", Readline.line_buffer)
+  rescue NotImplementedError
+  end if !/EditLine/n.match(Readline::VERSION)
+
+  def test_delete_text
+    str = "test_insert_text"
+    assert_equal(0, Readline.point)
+    assert_equal(Readline, Readline.insert_text(str))
+    assert_equal(16, Readline.point)
+    assert_equal(str, Readline.line_buffer)
+    Readline.delete_text
+
+    # NOTE: unexpected but GNU Readline's spec
+    assert_equal(16, Readline.point)
+    assert_equal("", Readline.line_buffer)
+    assert_equal(Readline, Readline.insert_text(str))
+    assert_equal(32, Readline.point)
+    assert_equal("", Readline.line_buffer)
+  rescue NotImplementedError
   end if !/EditLine/n.match(Readline::VERSION)
 
   def test_modify_text_in_pre_input_hook
-    begin
-      stdin = Tempfile.new("readline_redisplay_stdin")
-      stdout = Tempfile.new("readline_redisplay_stdout")
-      stdin.write("world\n")
-      stdin.close
-      Readline.pre_input_hook = proc do
-        assert_equal("", Readline.line_buffer)
-        Readline.insert_text("hello ")
-        Readline.redisplay
-      end
-      replace_stdio(stdin.path, stdout.path) do
-        line = Readline.readline("> ")
-        assert_equal("hello world", line)
-      end
-      assert_equal("> hello world\n", stdout.read)
-      stdout.close
-    rescue NotImplementedError
-    ensure
+    with_temp_stdio {|stdin, stdout|
       begin
-        Readline.pre_input_hook = nil
+        stdin.write("world\n")
+        stdin.close
+        Readline.pre_input_hook = proc do
+          assert_equal("", Readline.line_buffer)
+          Readline.insert_text("hello ")
+          Readline.redisplay
+        end
+        replace_stdio(stdin.path, stdout.path) do
+          line = Readline.readline("> ")
+          assert_equal("hello world", line)
+        end
+        assert_equal("> hello world\n", stdout.read)
+        stdout.close
       rescue NotImplementedError
+      ensure
+        begin
+          Readline.pre_input_hook = nil
+        rescue NotImplementedError
+        end
       end
-      stdin.close(true)
-      stdout.close(true)
-    end
+    }
   end if !/EditLine|\A4\.3\z/n.match(Readline::VERSION)
 
   def test_input_metachar
+    skip("Won't pass on mingw w/readline 7.0.005 [ruby-core:45682]") if mingw?
     bug6601 = '[ruby-core:45682]'
     Readline::HISTORY << "hello"
     wo = nil
@@ -411,13 +422,16 @@ class TestReadline < Test::Unit::TestCase
     end
     assert_equal("hello", line, bug6601)
   ensure
-    wo.close
-    with_pipe {|r, w| w.write("\C-a\C-k\n")} # clear line_buffer
+    wo&.close
+    Readline.delete_text
     Readline::HISTORY.clear
   end if !/EditLine/n.match(Readline::VERSION)
 
   def test_input_metachar_multibyte
-    skip 'this test needs UTF-8 locale' unless Encoding.find("locale") == Encoding::UTF_8
+    unless Encoding.find("locale") == Encoding::UTF_8
+      return if assert_under_utf8
+      skip 'this test needs UTF-8 locale'
+    end
     bug6602 = '[ruby-core:45683]'
     Readline::HISTORY << "\u3042\u3093"
     Readline::HISTORY << "\u3044\u3093"
@@ -430,14 +444,173 @@ class TestReadline < Test::Unit::TestCase
         w << "\cr\u3042\u3093"
         w.reopen(IO::NULL)
         assert_equal("\u3046\u3093", Readline.readline("", true), bug6602)
-        assert_equal("\u3042\u3093", Readline.readline("", true), bug6602)
+        Timeout.timeout(2) do
+          assert_equal("\u3042\u3093", Readline.readline("", true), bug6602)
+        end
         assert_equal(nil,            Readline.readline("", true), bug6602)
       end
     end
   ensure
-    with_pipe {|r, w| w.write("\C-a\C-k\n")} # clear line_buffer
+    Readline.delete_text
     Readline::HISTORY.clear
   end if !/EditLine/n.match(Readline::VERSION)
+
+  def test_refresh_line
+    bug6232 = '[ruby-core:43957] [Bug #6232] refresh_line after set_screen_size'
+    with_temp_stdio do |stdin, stdout|
+      replace_stdio(stdin.path, stdout.path) do
+        assert_ruby_status(%w[-rreadline -], <<-'end;', bug6232)
+          Readline.set_screen_size(40, 80)
+          Readline.refresh_line
+        end;
+      end
+    end
+  end if Readline.respond_to?(:refresh_line)
+
+  def test_setting_quoting_detection_proc
+    return unless Readline.respond_to?(:quoting_detection_proc=)
+
+    expected = proc { |text, index| false }
+    Readline.quoting_detection_proc = expected
+    assert_equal(expected, Readline.quoting_detection_proc)
+
+    assert_raise(ArgumentError) do
+      Readline.quoting_detection_proc = "This does not have call method."
+    end
+  end
+
+  def test_using_quoting_detection_proc
+    saved_completer_quote_characters = Readline.completer_quote_characters
+    saved_completer_word_break_characters = Readline.completer_word_break_characters
+    return unless Readline.respond_to?(:quoting_detection_proc=)
+
+    passed_text = nil
+    line = nil
+
+    with_temp_stdio do |stdin, stdout|
+      replace_stdio(stdin.path, stdout.path) do
+        Readline.completion_proc = ->(text) do
+          passed_text = text
+          ['completion']
+        end
+        Readline.completer_quote_characters = '\'"'
+        Readline.completer_word_break_characters = ' '
+        Readline.quoting_detection_proc = ->(text, index) do
+          index > 0 && text[index-1] == '\\'
+        end
+
+        stdin.write("first second\\ third\t")
+        stdin.flush
+        line = Readline.readline('> ', false)
+      end
+    end
+
+    assert_equal('second\\ third', passed_text)
+    assert_equal('first completion', line)
+  ensure
+    Readline.completer_quote_characters = saved_completer_quote_characters
+    Readline.completer_word_break_characters = saved_completer_word_break_characters
+  end
+
+  def test_using_quoting_detection_proc_with_multibyte_input
+    saved_completer_quote_characters = Readline.completer_quote_characters
+    saved_completer_word_break_characters = Readline.completer_word_break_characters
+    return unless Readline.respond_to?(:quoting_detection_proc=)
+    unless Encoding.find("locale") == Encoding::UTF_8
+      return if assert_under_utf8
+      skip 'this test needs UTF-8 locale'
+    end
+
+    passed_text = nil
+    escaped_char_indexes = []
+    line = nil
+
+    with_temp_stdio do |stdin, stdout|
+      replace_stdio(stdin.path, stdout.path) do
+        Readline.completion_proc = ->(text) do
+          passed_text = text
+          ['completion']
+        end
+        Readline.completer_quote_characters = '\'"'
+        Readline.completer_word_break_characters = ' '
+        Readline.quoting_detection_proc = ->(text, index) do
+          escaped = index > 0 && text[index-1] == '\\'
+          escaped_char_indexes << index if escaped
+          escaped
+        end
+
+        stdin.write("\u3042\u3093 second\\ third\t")
+        stdin.flush
+        line = Readline.readline('> ', false)
+      end
+    end
+
+    assert_equal([10], escaped_char_indexes)
+    assert_equal('second\\ third', passed_text)
+    assert_equal("\u3042\u3093 completion", line)
+  ensure
+    Readline.completer_quote_characters = saved_completer_quote_characters
+    Readline.completer_word_break_characters = saved_completer_word_break_characters
+  end
+
+  def test_completion_quote_character_completing_unquoted_argument
+    return unless Readline.respond_to?(:completion_quote_character)
+
+    quote_character = "original value"
+    Readline.completion_proc = -> (_) do
+      quote_character = Readline.completion_quote_character
+      []
+    end
+    Readline.completer_quote_characters = "'\""
+
+    with_temp_stdio do |stdin, stdout|
+      replace_stdio(stdin.path, stdout.path) do
+        stdin.write("input\t")
+        stdin.flush
+        Readline.readline("> ", false)
+      end
+    end
+
+    assert_nil(quote_character)
+  end
+
+  def test_completion_quote_character_completing_quoted_argument
+    return unless Readline.respond_to?(:completion_quote_character)
+
+    quote_character = "original value"
+    Readline.completion_proc = -> (_) do
+      quote_character = Readline.completion_quote_character
+      []
+    end
+    Readline.completer_quote_characters = "'\""
+
+    with_temp_stdio do |stdin, stdout|
+      replace_stdio(stdin.path, stdout.path) do
+        stdin.write("'input\t")
+        stdin.flush
+        Readline.readline("> ", false)
+      end
+    end
+
+    assert_equal("'", quote_character)
+  end
+
+  def test_completion_quote_character_after_completion
+    return unless Readline.respond_to?(:completion_quote_character)
+
+    Readline.completion_proc = -> (_) { [] }
+    Readline.completer_quote_characters = "'\""
+
+    with_temp_stdio do |stdin, stdout|
+      replace_stdio(stdin.path, stdout.path) do
+        stdin.write("'input\t")
+        stdin.flush
+        Readline.readline("> ", false)
+      end
+    end
+
+    assert_nil(Readline.completion_quote_character)
+  end
 
   private
 
@@ -460,18 +633,23 @@ class TestReadline < Test::Unit::TestCase
           STDOUT.reopen(orig_stdout)
           orig_stdin.close
           orig_stdout.close
+          orig_stderr.close
         end
       }
     }
   end
 
   def with_temp_stdio
-    stdin = Tempfile.new("test_readline_stdin")
-    stdout = Tempfile.new("test_readline_stdout")
-    yield stdin, stdout
-  ensure
-    stdin.close(true) if stdin
-    stdout.close(true) if stdout
+    Tempfile.create("test_readline_stdin") {|stdin|
+      Tempfile.create("test_readline_stdout") {|stdout|
+        yield stdin, stdout
+        if windows?
+          # needed since readline holds refs to tempfiles, can't delete on Windows
+          Readline.input = STDIN
+          Readline.output = STDOUT
+        end
+      }
+    }
   end
 
   def with_pipe
@@ -495,5 +673,15 @@ class TestReadline < Test::Unit::TestCase
 
   def get_default_internal_encoding
     return Encoding.default_internal || Encoding.find("locale")
+  end
+
+  def assert_under_utf8
+    return false if ENV['LC_ALL'] == 'UTF-8'
+    loc = caller_locations(1, 1)[0].base_label.to_s
+    assert_separately([{"LC_ALL"=>"UTF-8"}, "-r", __FILE__], <<SRC)
+#skip "test \#{ENV['LC_ALL']}"
+#{self.class.name}.new(#{loc.dump}).run(Test::Unit::Runner.new)
+SRC
+    return true
   end
 end if defined?(::Readline)

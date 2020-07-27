@@ -1,4 +1,5 @@
 # coding: US-ASCII
+# frozen_string_literal: false
 require 'test/unit'
 require 'stringio'
 
@@ -13,13 +14,12 @@ class TestParse < Test::Unit::TestCase
   end
 
   def test_else_without_rescue
-    x = eval <<-END, nil, __FILE__, __LINE__+1
+    assert_syntax_error(<<-END, %r":#{__LINE__+2}: else without rescue"o, [__FILE__, __LINE__+1])
       begin
       else
         42
       end
     END
-    assert_equal(42, x)
   end
 
   def test_alias_backref
@@ -173,6 +173,7 @@ class TestParse < Test::Unit::TestCase
     end
 
     c = Class.new
+    c.freeze
     assert_nothing_raised(SyntaxError) do
       eval <<-END, nil, __FILE__, __LINE__+1
       if false
@@ -182,7 +183,6 @@ class TestParse < Test::Unit::TestCase
       END
     end
 
-    c = Class.new
     assert_raise(SyntaxError) do
       eval <<-END, nil, __FILE__, __LINE__+1
         $1 &= 1
@@ -206,9 +206,9 @@ class TestParse < Test::Unit::TestCase
       END
     end
 
-    assert_raise(SyntaxError) do
+    assert_nothing_raised(SyntaxError) do
       eval <<-END, nil, __FILE__, __LINE__+1
-        class Foo Bar; end
+        class Foo 1; end
       END
     end
   end
@@ -218,7 +218,6 @@ class TestParse < Test::Unit::TestCase
     def o.>(x); x; end
     def o./(x); x; end
 
-    a = nil
     assert_nothing_raised do
       o.instance_eval <<-END, __FILE__, __LINE__+1
         undef >, /
@@ -361,9 +360,9 @@ class TestParse < Test::Unit::TestCase
     assert_equal("foo 1 bar", "foo #$1 bar")
   end
 
-  def test_dstr_disallowd_variable
+  def test_dstr_disallowed_variable
     bug8375 = '[ruby-core:54885] [Bug #8375]'
-    %w[@ @1 @@. @@ @@1 @@. $ $%].each do |src|
+    %w[@ @1 @. @@ @@1 @@. $ $%].each do |src|
       src = '#'+src+' '
       str = assert_nothing_raised(SyntaxError, "#{bug8375} #{src.dump}") do
         break eval('"'+src+'"')
@@ -374,6 +373,25 @@ class TestParse < Test::Unit::TestCase
 
   def test_dsym
     assert_nothing_raised { eval(':""') }
+  end
+
+  def assert_disallowed_variable(type, noname, *invalid)
+    assert_syntax_error(noname, "`#{noname}' without identifiers is not allowed as #{type} variable name")
+    invalid.each do |name|
+      assert_syntax_error(name, "`#{name}' is not allowed as #{type} variable name")
+    end
+  end
+
+  def test_disallowed_instance_variable
+    assert_disallowed_variable("an instance", *%w[@ @1 @.])
+  end
+
+  def test_disallowed_class_variable
+    assert_disallowed_variable("a class", *%w[@@ @@1 @@.])
+  end
+
+  def test_disallowed_gloal_variable
+    assert_disallowed_variable("a global", *%w[$ $%])
   end
 
   def test_arg2
@@ -438,6 +456,30 @@ class TestParse < Test::Unit::TestCase
     end
   end
 
+  def test_op_asgn1_with_block
+    t = Object.new
+    a = []
+    blk = proc {|x| a << x }
+    def t.[](_)
+      yield(:aref)
+      nil
+    end
+    def t.[]=(_, _)
+      yield(:aset)
+    end
+    def t.dummy(_)
+    end
+    eval <<-END, nil, __FILE__, __LINE__+1
+      t[42, &blk] ||= 42
+    END
+    assert_equal([:aref, :aset], a)
+    a.clear
+    eval <<-END, nil, __FILE__, __LINE__+1
+    t[42, &blk] ||= t.dummy 42 # command_asgn test
+    END
+    assert_equal([:aref, :aset], a)
+  end
+
   def test_backquote
     t = Object.new
 
@@ -465,21 +507,41 @@ class TestParse < Test::Unit::TestCase
   end
 
   def test_string
-    assert_raise(SyntaxError) do
-      eval '"\xg1"'
-    end
+    mesg = 'from the backslash through the invalid char'
 
-    assert_raise(SyntaxError) do
-      eval '"\u{1234"'
-    end
+    e = assert_syntax_error('"\xg1"', /hex escape/)
+    assert_equal('   ^', e.message.lines.last, mesg)
 
-    assert_raise(SyntaxError) do
-      eval '"\M1"'
-    end
+    e = assert_syntax_error('"\u{1234"', 'unterminated Unicode escape')
+    assert_equal('        ^', e.message.lines.last, mesg)
 
-    assert_raise(SyntaxError) do
-      eval '"\C1"'
-    end
+    e = assert_syntax_error('"\u{xxxx}"', 'invalid Unicode escape')
+    assert_equal('    ^', e.message.lines.last, mesg)
+
+    e = assert_syntax_error('"\u{xxxx', 'Unicode escape')
+    assert_pattern_list([
+                          /.*: invalid Unicode escape\n.*\n/,
+                          /    \^/,
+                          /\n/,
+                          /.*: unterminated Unicode escape\n.*\n/,
+                          /    \^/,
+                          /\n/,
+                          /.*: unterminated string.*\n.*\n/,
+                          /        \^/,
+                        ], e.message)
+
+    e = assert_syntax_error('"\M1"', /escape character syntax/)
+    assert_equal(' ^~~', e.message.lines.last, mesg)
+
+    e = assert_syntax_error('"\C1"', /escape character syntax/)
+    assert_equal(' ^~~', e.message.lines.last, mesg)
+
+    src = '"\xD0\u{90'"\n""000000000000000000000000"
+    assert_syntax_error(src, /:#{__LINE__}: unterminated/o)
+
+    assert_syntax_error('"\u{100000000}"', /invalid Unicode escape/)
+    assert_equal("", eval('"\u{}"'))
+    assert_equal("", eval('"\u{ }"'))
 
     assert_equal("\x81", eval('"\C-\M-a"'))
     assert_equal("\177", eval('"\c?"'))
@@ -493,6 +555,8 @@ class TestParse < Test::Unit::TestCase
     assert_raise(SyntaxError) { eval("?\v") }
     assert_raise(SyntaxError) { eval("?\r") }
     assert_raise(SyntaxError) { eval("?\f") }
+    assert_raise(SyntaxError) { eval("?\f") }
+    assert_raise(SyntaxError) { eval(" ?a\x8a".force_encoding("utf-8")) }
     assert_equal("\u{1234}", eval("?\u{1234}"))
     assert_equal("\u{1234}", eval('?\u{1234}'))
   end
@@ -516,8 +580,9 @@ class TestParse < Test::Unit::TestCase
     assert_nothing_raised(SyntaxError, bug) do
       assert_equal(sym, eval(':"foo\u{0}bar"'))
     end
-    assert_raise(SyntaxError) do
-      eval ':"foo\u{}bar"'
+    assert_nothing_raised(SyntaxError) do
+      assert_equal(:foobar, eval(':"foo\u{}bar"'))
+      assert_equal(:foobar, eval(':"foo\u{ }bar"'))
     end
   end
 
@@ -651,10 +716,12 @@ x = __ENCODING__
 
   def test_invalid_instance_variable
     assert_raise(SyntaxError) { eval('@#') }
+    assert_raise(SyntaxError) { eval('@') }
   end
 
   def test_invalid_class_variable
     assert_raise(SyntaxError) { eval('@@1') }
+    assert_raise(SyntaxError) { eval('@@') }
   end
 
   def test_invalid_char
@@ -664,11 +731,13 @@ x = __ENCODING__
     assert_in_out_err(%W"-e \x01x", "", [], invalid_char, bug10117)
     assert_syntax_error("\x01x", invalid_char, bug10117)
     assert_equal(nil, eval("\x04x"))
+    assert_equal 1, x
   end
 
   def test_literal_concat
     x = "baz"
     assert_equal("foobarbaz", eval('"foo" "bar#{x}"'))
+    assert_equal("baz", x)
   end
 
   def test_unassignable
@@ -699,6 +768,12 @@ x = __ENCODING__
           FOO = 1
         end
       END
+    end
+    assert_raise(SyntaxError) do
+      eval "#{<<~"begin;"}\n#{<<~'end;'}", nil, __FILE__, __LINE__+1
+      begin;
+        x, true
+      end;
     end
   end
 
@@ -741,6 +816,7 @@ x = __ENCODING__
     x = 1
     assert_nil eval("x; nil")
     assert_nil eval("1+1; nil")
+    assert_nil eval("1.+(1); nil")
     assert_nil eval("TestParse; nil")
     assert_nil eval("::TestParse; nil")
     assert_nil eval("x..x; nil")
@@ -750,23 +826,18 @@ x = __ENCODING__
     assert_nil eval("true; nil")
     assert_nil eval("false; nil")
     assert_nil eval("defined?(1); nil")
+    assert_equal 1, x
 
     assert_raise(SyntaxError) do
       eval %q(1; next; 2)
     end
 
-    o = Object.new
-    assert_nothing_raised do
-      eval <<-END, nil, __FILE__, __LINE__+1
-        x = def o.foo; end
-      END
-    end
-    assert_equal(14, $stderr.string.lines.to_a.size)
+    assert_equal(13, $stderr.string.lines.to_a.size)
     $stderr = stderr
   end
 
   def test_assign_in_conditional
-    assert_raise(SyntaxError) do
+    assert_nothing_raised do
       eval <<-END, nil, __FILE__, __LINE__+1
         (x, y = 1, 2) ? 1 : 2
       END
@@ -814,6 +885,7 @@ x = __ENCODING__
       eval <<-END, nil, __FILE__, __LINE__+1
         :"foo#{"x"}baz" ? 1 : 2
       END
+      assert_equal "bar", x
     end
   end
 
@@ -822,26 +894,6 @@ x = __ENCODING__
       eval <<-END, nil, __FILE__, __LINE__+1
         yield(&:+)
       END
-    end
-  end
-
-  def test_intern
-    assert_equal(':""', ''.intern.inspect)
-    assert_equal(':$foo', '$foo'.intern.inspect)
-    assert_equal(':"!foo"', '!foo'.intern.inspect)
-    assert_equal(':"foo=="', "foo==".intern.inspect)
-  end
-
-  def test_all_symbols
-    x = Symbol.all_symbols
-    assert_kind_of(Array, x)
-    assert(x.all? {|s| s.is_a?(Symbol) })
-  end
-
-  def test_is_class_id
-    c = Class.new
-    assert_raise(NameError) do
-      c.instance_eval { remove_class_variable(:@var) }
     end
   end
 
@@ -858,4 +910,297 @@ x = __ENCODING__
     actual = e.backtrace.first[/\A#{Regexp.quote(__FILE__)}:(\d+):/o, 1].to_i
     assert_equal(expected, actual, bug5614)
   end
+
+  def test_no_shadowing_variable_warning
+    assert_no_warning(/shadowing outer local variable/) {eval("a=1; tap {|a|}")}
+  end
+
+  def test_unused_variable
+    o = Object.new
+    assert_warning(/assigned but unused variable/) {o.instance_eval("def foo; a=1; nil; end")}
+    assert_warning(/assigned but unused variable/) {o.instance_eval("def bar; a=1; a(); end")}
+    a = "\u{3042}"
+    assert_warning(/#{a}/) {o.instance_eval("def foo; #{a}=1; nil; end")}
+    o = Object.new
+    assert_warning(/assigned but unused variable/) {o.instance_eval("def foo; tap {a=1; a()}; end")}
+    assert_warning('') {o.instance_eval("def bar; a=a=1; nil; end")}
+  end
+
+  def test_named_capture_conflict
+    a = 1
+    assert_warning('') {eval("a = 1; /(?<a>)/ =~ ''")}
+    a = "\u{3042}"
+    assert_warning('') {eval("#{a} = 1; /(?<#{a}>)/ =~ ''")}
+  end
+
+  def test_rescue_in_command_assignment
+    bug = '[ruby-core:75621] [Bug #12402]'
+    all_assertions(bug) do |a|
+      a.for("lhs = arg") do
+        v = bug
+        v = raise(bug) rescue "ok"
+        assert_equal("ok", v)
+      end
+      a.for("lhs op_asgn arg") do
+        v = 0
+        v += raise(bug) rescue 1
+        assert_equal(1, v)
+      end
+      a.for("lhs[] op_asgn arg") do
+        v = [0]
+        v[0] += raise(bug) rescue 1
+        assert_equal([1], v)
+      end
+      a.for("lhs.m op_asgn arg") do
+        k = Struct.new(:m)
+        v = k.new(0)
+        v.m += raise(bug) rescue 1
+        assert_equal(k.new(1), v)
+      end
+      a.for("lhs::m op_asgn arg") do
+        k = Struct.new(:m)
+        v = k.new(0)
+        v::m += raise(bug) rescue 1
+        assert_equal(k.new(1), v)
+      end
+      a.for("lhs.C op_asgn arg") do
+        k = Struct.new(:C)
+        v = k.new(0)
+        v.C += raise(bug) rescue 1
+        assert_equal(k.new(1), v)
+      end
+      a.for("lhs::C op_asgn arg") do
+        v = Class.new
+        v::C ||= raise(bug) rescue 1
+        assert_equal(1, v::C)
+      end
+      a.for("lhs = command") do
+        v = bug
+        v = raise bug rescue "ok"
+        assert_equal("ok", v)
+      end
+      a.for("lhs op_asgn command") do
+        v = 0
+        v += raise bug rescue 1
+        assert_equal(1, v)
+      end
+      a.for("lhs[] op_asgn command") do
+        v = [0]
+        v[0] += raise bug rescue 1
+        assert_equal([1], v)
+      end
+      a.for("lhs.m op_asgn command") do
+        k = Struct.new(:m)
+        v = k.new(0)
+        v.m += raise bug rescue 1
+        assert_equal(k.new(1), v)
+      end
+      a.for("lhs::m op_asgn command") do
+        k = Struct.new(:m)
+        v = k.new(0)
+        v::m += raise bug rescue 1
+        assert_equal(k.new(1), v)
+      end
+      a.for("lhs.C op_asgn command") do
+        k = Struct.new(:C)
+        v = k.new(0)
+        v.C += raise bug rescue 1
+        assert_equal(k.new(1), v)
+      end
+      a.for("lhs::C op_asgn command") do
+        v = Class.new
+        v::C ||= raise bug rescue 1
+        assert_equal(1, v::C)
+      end
+    end
+  end
+
+  def test_yyerror_at_eol
+    assert_syntax_error("    0b", /\^/)
+    assert_syntax_error("    0b\n", /\^/)
+  end
+
+  def test_error_def_in_argument
+    assert_separately([], "#{<<-"begin;"}\n#{<<~"end;"}")
+    begin;
+      assert_syntax_error("def f r:def d; def f 0end", /unexpected/)
+    end;
+
+    assert_syntax_error("def\nf(000)end", /^  \^~~/)
+    assert_syntax_error("def\nf(&)end", /^   \^/)
+  end
+
+  def test_method_location_in_rescue
+    bug = '[ruby-core:79388] [Bug #13181]'
+    obj, line = Object.new, __LINE__+1
+    def obj.location
+      #
+      raise
+    rescue
+      caller_locations(1, 1)[0]
+    end
+
+    assert_equal(line, obj.location.lineno, bug)
+  end
+
+  def test_negative_line_number
+    bug = '[ruby-core:80920] [Bug #13523]'
+    obj = Object.new
+    obj.instance_eval("def t(e = false);raise if e; __LINE__;end", "test", -100)
+    assert_equal(-100, obj.t, bug)
+    assert_equal(-100, obj.method(:t).source_location[1], bug)
+    e = assert_raise(RuntimeError) {obj.t(true)}
+    assert_equal(-100, e.backtrace_locations.first.lineno, bug)
+  end
+
+  def test_file_in_indented_heredoc
+    name = '[ruby-core:80987] [Bug #13540]' # long enough to be shared
+    assert_equal(name+"\n", eval("#{<<-"begin;"}\n#{<<-'end;'}", nil, name))
+    begin;
+      <<~HEREDOC
+        #{__FILE__}
+      HEREDOC
+    end;
+  end
+
+  def test_unexpected_token_error
+    assert_raise(SyntaxError) do
+      eval('"x"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+    end
+  end
+
+  def test_unexpected_token_after_numeric
+    assert_raise_with_message(SyntaxError, /^    \^~~\z/) do
+      eval('0000xyz')
+    end
+    assert_raise_with_message(SyntaxError, /^    \^~~\z/) do
+      eval('1.2i1.1')
+    end
+  end
+
+  def test_truncated_source_line
+    e = assert_raise_with_message(SyntaxError, /unexpected tIDENTIFIER/) do
+      eval("'0123456789012345678901234567890123456789' abcdefghijklmnopqrstuvwxyz0123456789 0123456789012345678901234567890123456789")
+    end
+    line = e.message.lines[1]
+    assert_operator(line, :start_with?, "...")
+    assert_operator(line, :end_with?, "...\n")
+  end
+
+  def test_unterminated_regexp_error
+    e = assert_raise(SyntaxError) do
+      eval("/x")
+    end.message
+    assert_match(/unterminated regexp meets end of file/, e)
+    assert_not_match(/unexpected tSTRING_END/, e)
+  end
+
+  def test_lparenarg
+    o = Struct.new(:x).new
+    def o.i(x)
+      self.x = x
+    end
+    o.instance_eval {i (-1.3).abs}
+    assert_equal(1.3, o.x)
+    o.instance_eval {i = 0; i (-1.3).abs}
+    assert_equal(1.3, o.x)
+  end
+
+  def test_serial_comparison
+    assert_warning(/comparison '<' after/) do
+      $VERBOSE = true
+      x = 1
+      eval("if false; 0 < x < 2; end")
+    end
+  end
+
+  def test_eof_in_def
+    assert_raise(SyntaxError) { eval("def m\n\0""end") }
+    assert_raise(SyntaxError) { eval("def m\n\C-d""end") }
+    assert_raise(SyntaxError) { eval("def m\n\C-z""end") }
+  end
+
+  def test_location_of_invalid_token
+    assert_raise_with_message(SyntaxError, /^      \^~~\z/) do
+      eval('class xxx end')
+    end
+  end
+
+  def test_whitespace_warning
+    assert_raise_with_message(SyntaxError, /backslash/) do
+      eval("\\foo")
+    end
+    assert_raise_with_message(SyntaxError, /escaped space/) do
+      eval("\\ ")
+    end
+    assert_raise_with_message(SyntaxError, /escaped horizontal tab/) do
+      eval("\\\t")
+    end
+    assert_raise_with_message(SyntaxError, /escaped form feed/) do
+      eval("\\\f")
+    end
+    assert_raise_with_message(SyntaxError, /escaped carriage return/) do
+      assert_warn(/middle of line/) {eval("\\\r")}
+    end
+    assert_raise_with_message(SyntaxError, /escaped vertical tab/) do
+      eval("\\\v")
+    end
+  end
+
+  def test_command_def_cmdarg
+    assert_valid_syntax("\n#{<<~"begin;"}\n#{<<~'end;'}")
+    begin;
+      m def x(); end
+      1.tap do end
+    end;
+  end
+
+  NONASCII_CONSTANTS = [
+    *%W"\u{00de} \u{00C0}".flat_map {|c| [c, c.encode("iso-8859-15")]},
+    "\u{1c4}", "\u{1f2}", "\u{1f88}", "\u{370}",
+    *%W"\u{391} \u{ff21}".flat_map {|c| [c, c.encode("cp932"), c.encode("euc-jp")]},
+  ]
+
+  def assert_nonascii_const
+    assert_all_assertions_foreach("NONASCII_CONSTANTS", *NONASCII_CONSTANTS) do |n|
+      m = Module.new
+      assert_not_operator(m, :const_defined?, n)
+      assert_raise_with_message(NameError, /uninitialized/) do
+        m.const_get(n)
+      end
+      assert_nil(eval("defined?(m::#{n})"))
+
+      v = yield m, n
+
+      assert_operator(m, :const_defined?, n)
+      assert_equal("constant", eval("defined?(m::#{n})"))
+      assert_same(v, m.const_get(n))
+
+      m.__send__(:remove_const, n)
+      assert_not_operator(m, :const_defined?, n)
+      assert_nil(eval("defined?(m::#{n})"))
+    end
+  end
+
+  def test_nonascii_const_set
+    assert_nonascii_const do |m, n|
+      m.const_set(n, 42)
+    end
+  end
+
+  def test_nonascii_constant
+    assert_nonascii_const do |m, n|
+      m.module_eval("class #{n}; self; end")
+    end
+  end
+
+  def test_cdmarg_after_command_args_and_tlbrace_arg
+    assert_valid_syntax('let () { m(a) do; end }')
+  end
+
+=begin
+  def test_past_scope_variable
+    assert_warning(/past scope/) {catch {|tag| eval("BEGIN{throw tag}; tap {a = 1}; a")}}
+  end
+=end
 end

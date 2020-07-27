@@ -1,10 +1,7 @@
 # coding: UTF-8
+# frozen_string_literal: true
 
-require 'rubygems'
-require 'minitest/autorun'
-require 'pp'
-
-require 'rdoc'
+require 'minitest_helper'
 require 'rdoc/markup/block_quote'
 require 'rdoc/markdown'
 
@@ -14,13 +11,8 @@ class TestRDocMarkdown < RDoc::TestCase
     @RM = RDoc::Markup
 
     @parser = RDoc::Markdown.new
-  end
 
-  def mu_pp obj
-    s = ''
-    s = PP.pp obj, s
-    s.force_encoding Encoding.default_external if defined? Encoding
-    s.chomp
+    @to_html = RDoc::Markup::ToHtml.new(RDoc::Options.new, nil)
   end
 
   def test_class_parse
@@ -439,7 +431,19 @@ heading
   def test_parse_image
     doc = parse "image ![alt text](path/to/image.jpg)"
 
-    expected = doc(para("image {alt text}[path/to/image.jpg]"))
+    expected = doc(para("image rdoc-image:path/to/image.jpg"))
+
+    assert_equal expected, doc
+  end
+
+  def test_parse_image_link
+    @parser.html = true
+
+    doc = parse "[![alt text](path/to/image.jpg)](http://example.com)"
+
+    expected =
+      doc(
+        para('{rdoc-image:path/to/image.jpg}[http://example.com]'))
 
     assert_equal expected, doc
   end
@@ -713,7 +717,7 @@ Some text. ^[With a footnote]
   def test_parse_note_no_notes
     @parser.notes = false
 
-    assert_raises RuntimeError do # TODO use a real error
+    assert_raises RDoc::Markdown::ParseError do
       parse "Some text.[^1]"
     end
   end
@@ -926,6 +930,35 @@ and an extra note.[^2]
     assert_equal expected, doc
   end
 
+  def test_parse_strike_tilde
+    doc = parse "it ~~works~~\n"
+
+    expected = @RM::Document.new(
+      @RM::Paragraph.new("it ~works~"))
+
+    assert_equal expected, doc
+  end
+
+  def test_parse_strike_words_tilde
+    doc = parse "it ~~works fine~~\n"
+
+    expected = @RM::Document.new(
+      @RM::Paragraph.new("it <s>works fine</s>"))
+
+    assert_equal expected, doc
+  end
+
+  def test_parse_strike_tilde_no
+    @parser.strike = false
+
+    doc = parse "it ~~works fine~~\n"
+
+    expected = @RM::Document.new(
+      @RM::Paragraph.new("it ~~works fine~~"))
+
+    assert_equal expected, doc
+  end
+
   def test_parse_style
     @parser.css = true
 
@@ -967,6 +1000,14 @@ and an extra note.[^2]
     assert_equal '*word*',            @parser.strong('word')
     assert_equal '<b>two words</b>',  @parser.strong('two words')
     assert_equal '<b>_emphasis_</b>', @parser.strong('_emphasis_')
+  end
+
+  def test_code_fence_with_unintended_array
+    doc = parse '```<ruby>```'
+
+    expected = doc(verb('<ruby>'))
+
+    assert_equal expected, doc
   end
 
   def parse text

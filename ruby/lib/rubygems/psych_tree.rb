@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 module Gem
   if defined? ::Psych::Visitors
     class NoAliasYAMLTree < Psych::Visitors::YAMLTree
@@ -17,7 +18,7 @@ module Gem
       end
 
       # This is ported over from the yaml_tree in 1.9.3
-      def format_time time
+      def format_time(time)
         if time.utc?
           time.strftime("%Y-%m-%d %H:%M:%S.%9N Z")
         else

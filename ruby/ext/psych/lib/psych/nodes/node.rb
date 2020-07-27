@@ -1,4 +1,7 @@
+# frozen_string_literal: true
 require 'stringio'
+require 'psych/class_loader'
+require 'psych/scalar_scanner'
 
 module Psych
   module Nodes
@@ -13,6 +16,18 @@ module Psych
 
       # An associated tag
       attr_reader :tag
+
+      # The line number where this node start
+      attr_accessor :start_line
+
+      # The column number where this node start
+      attr_accessor :start_column
+
+      # The line number where this node ends
+      attr_accessor :end_line
+
+      # The column number where this node ends
+      attr_accessor :end_column
 
       # Create a new Psych::Nodes::Node
       def initialize
@@ -32,7 +47,7 @@ module Psych
       #
       # See also Psych::Visitors::ToRuby
       def to_ruby
-        Visitors::ToRuby.new.accept self
+        Visitors::ToRuby.create.accept(self)
       end
       alias :transform :to_ruby
 
@@ -48,6 +63,13 @@ module Psych
         io
       end
       alias :to_yaml :yaml
+
+      def alias?;    false; end
+      def document?; false; end
+      def mapping?;  false; end
+      def scalar?;   false; end
+      def sequence?; false; end
+      def stream?;   false; end
     end
   end
 end

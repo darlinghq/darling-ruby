@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 # -*- mode: ruby; ruby-indent-level: 2; tab-width: 2 -*-
 
 require 'erb'
@@ -56,6 +57,21 @@ class RDoc::Generator::Darkfish
   RDoc::RDoc.add_generator self
 
   include ERB::Util
+
+  ##
+  # Stylesheets, fonts, etc. that are included in RDoc.
+
+  BUILTIN_STYLE_ITEMS = # :nodoc:
+    %w[
+      css/fonts.css
+      fonts/Lato-Light.ttf
+      fonts/Lato-LightItalic.ttf
+      fonts/Lato-Regular.ttf
+      fonts/Lato-RegularItalic.ttf
+      fonts/SourceCodePro-Bold.ttf
+      fonts/SourceCodePro-Regular.ttf
+      css/rdoc.css
+  ]
 
   ##
   # Path to this file's parent directory. Used to find templates and other
@@ -128,6 +144,11 @@ class RDoc::Generator::Darkfish
   attr_reader :store
 
   ##
+  # The directory where the template files live
+
+  attr_reader :template_dir # :nodoc:
+
+  ##
   # The output directory
 
   attr_reader :outputdir
@@ -195,7 +216,13 @@ class RDoc::Generator::Darkfish
     debug_msg "Copying static files"
     options = { :verbose => $DEBUG_RDOC, :noop => @dry_run }
 
-    FileUtils.cp @template_dir + 'rdoc.css', '.', options
+    BUILTIN_STYLE_ITEMS.each do |item|
+      install_rdoc_static_file @template_dir + item, "./#{item}", options
+    end
+
+    @options.template_stylesheets.each do |stylesheet|
+      FileUtils.cp stylesheet, '.', options
+    end
 
     Dir[(@template_dir + "{js,images}/**/*").to_s].each do |path|
       next if File.directory? path
@@ -203,11 +230,7 @@ class RDoc::Generator::Darkfish
 
       dst = Pathname.new(path).relative_path_from @template_dir
 
-      # I suck at glob
-      dst_dir = dst.dirname
-      FileUtils.mkdir_p dst_dir, options unless File.exist? dst_dir
-
-      FileUtils.cp @template_dir + path, dst, options
+      install_rdoc_static_file @template_dir + path, dst, options
     end
   end
 
@@ -224,6 +247,7 @@ class RDoc::Generator::Darkfish
     generate_file_files
     generate_table_of_contents
     @json_index.generate
+    @json_index.generate_gzipped
 
     copy_static
 
@@ -289,12 +313,16 @@ class RDoc::Generator::Darkfish
     search_index_rel_prefix = rel_prefix
     search_index_rel_prefix += @asset_rel_path if @file_output
 
-    # suppress 1.9.3 warning
-    asset_rel_prefix = asset_rel_prefix = rel_prefix + @asset_rel_path
+    asset_rel_prefix = rel_prefix + @asset_rel_path
 
     @title = @options.title
 
-    render_template template_file, out_file do |io| binding end
+    render_template template_file, out_file do |io|
+      here = binding
+      # suppress 1.9.3 warning
+      here.local_variable_set(:asset_rel_prefix, asset_rel_prefix)
+      here
+    end
   rescue => e
     error = RDoc::Error.new \
       "error generating index.html: #{e.message} (#{e.class})"
@@ -319,14 +347,19 @@ class RDoc::Generator::Darkfish
     search_index_rel_prefix = rel_prefix
     search_index_rel_prefix += @asset_rel_path if @file_output
 
-    # suppress 1.9.3 warning
-    asset_rel_prefix = asset_rel_prefix = rel_prefix + @asset_rel_path
-    svninfo          = svninfo          = get_svninfo(current)
+    asset_rel_prefix = rel_prefix + @asset_rel_path
+    svninfo          = get_svninfo(current)
 
     @title = "#{klass.type} #{klass.full_name} - #{@options.title}"
 
     debug_msg "  rendering #{out_file}"
-    render_template template_file, out_file do |io| binding end
+    render_template template_file, out_file do |io|
+      here = binding
+      # suppress 1.9.3 warning
+      here.local_variable_set(:asset_rel_prefix, asset_rel_prefix)
+      here.local_variable_set(:svninfo, svninfo)
+      here
+    end
   end
 
   ##
@@ -392,8 +425,7 @@ class RDoc::Generator::Darkfish
       search_index_rel_prefix = rel_prefix
       search_index_rel_prefix += @asset_rel_path if @file_output
 
-      # suppress 1.9.3 warning
-      asset_rel_prefix = asset_rel_prefix = rel_prefix + @asset_rel_path
+      asset_rel_prefix = rel_prefix + @asset_rel_path
 
       unless filepage_file then
         if file.text? then
@@ -410,7 +442,13 @@ class RDoc::Generator::Darkfish
       @title += " - #{@options.title}"
       template_file ||= filepage_file
 
-      render_template template_file, out_file do |io| binding end
+      render_template template_file, out_file do |io|
+        here = binding
+        # suppress 1.9.3 warning
+        here.local_variable_set(:asset_rel_prefix, asset_rel_prefix)
+        here.local_variable_set(:current, current)
+        here
+      end
     end
   rescue => e
     error =
@@ -434,20 +472,25 @@ class RDoc::Generator::Darkfish
     search_index_rel_prefix = rel_prefix
     search_index_rel_prefix += @asset_rel_path if @file_output
 
-    # suppress 1.9.3 warning
-    current          = current          = file
-    asset_rel_prefix = asset_rel_prefix = rel_prefix + @asset_rel_path
+    current          = file
+    asset_rel_prefix = rel_prefix + @asset_rel_path
 
     @title = "#{file.page_name} - #{@options.title}"
 
     debug_msg "  rendering #{out_file}"
-    render_template template_file, out_file do |io| binding end
+    render_template template_file, out_file do |io|
+      here = binding
+      # suppress 1.9.3 warning
+      here.local_variable_set(:current, current)
+      here.local_variable_set(:asset_rel_prefix, asset_rel_prefix)
+      here
+    end
   end
 
   ##
   # Generates the 404 page for the RDoc servlet
 
-  def generate_servlet_not_found path
+  def generate_servlet_not_found message
     setup
 
     template_file = @template_dir + 'servlet_not_found.rhtml'
@@ -459,12 +502,16 @@ class RDoc::Generator::Darkfish
     search_index_rel_prefix = rel_prefix
     search_index_rel_prefix += @asset_rel_path if @file_output
 
-    # suppress 1.9.3 warning
-    asset_rel_prefix = asset_rel_prefix = ''
+    asset_rel_prefix = ''
 
     @title = 'Not Found'
 
-    render_template template_file do |io| binding end
+    render_template template_file do |io|
+      here = binding
+      # suppress 1.9.3 warning
+      here.local_variable_set(:asset_rel_prefix, asset_rel_prefix)
+      here
+    end
   rescue => e
     error = RDoc::Error.new \
       "error generating servlet_not_found: #{e.message} (#{e.class})"
@@ -516,18 +563,39 @@ class RDoc::Generator::Darkfish
     search_index_rel_prefix = rel_prefix
     search_index_rel_prefix += @asset_rel_path if @file_output
 
-    # suppress 1.9.3 warning
-    asset_rel_prefix = asset_rel_prefix = rel_prefix + @asset_rel_path
+    asset_rel_prefix = rel_prefix + @asset_rel_path
 
     @title = "Table of Contents - #{@options.title}"
 
-    render_template template_file, out_file do |io| binding end
+    render_template template_file, out_file do |io|
+      here = binding
+      # suppress 1.9.3 warning
+      here.local_variable_set(:asset_rel_prefix, asset_rel_prefix)
+      here
+    end
   rescue => e
     error = RDoc::Error.new \
       "error generating table_of_contents.html: #{e.message} (#{e.class})"
     error.set_backtrace e.backtrace
 
     raise error
+  end
+
+  def install_rdoc_static_file source, destination, options # :nodoc:
+    return unless source.exist?
+
+    begin
+      FileUtils.mkdir_p File.dirname(destination), options
+
+      begin
+        FileUtils.ln source, destination, options
+      rescue Errno::EEXIST
+        FileUtils.rm destination
+        retry
+      end
+    rescue
+      FileUtils.cp source, destination, options
+    end
   end
 
   ##
@@ -657,7 +725,7 @@ class RDoc::Generator::Darkfish
 
       out_file.dirname.mkpath
       out_file.open 'w', 0644 do |io|
-        io.set_encoding @options.encoding if Object.const_defined? :Encoding
+        io.set_encoding @options.encoding
 
         @context = yield io
 
@@ -703,18 +771,20 @@ class RDoc::Generator::Darkfish
       erbout = 'io'
     else
       template = file.read
-      template = template.encode @options.encoding if
-        Object.const_defined? :Encoding
+      template = template.encode @options.encoding
 
       file_var = File.basename(file).sub(/\..*/, '')
 
       erbout = "_erbout_#{file_var}"
     end
 
-    template = klass.new template, nil, '<>', erbout
+    if RUBY_VERSION >= '2.6'
+      template = klass.new template, trim_mode: '<>', eoutvar: erbout
+    else
+      template = klass.new template, nil, '<>', erbout
+    end
     @template_cache[file] = template
     template
   end
 
 end
-

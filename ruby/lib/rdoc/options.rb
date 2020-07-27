@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'optparse'
 require 'pathname'
 
@@ -50,6 +51,18 @@ require 'pathname'
 #         rdoc_options.spell_dictionary = dictionary
 #       end
 #     end
+#   end
+#
+# Of course, RDoc::Options does not respond to +spell_dictionary+ by default
+# so you will need to add it:
+#
+#   class RDoc::Options
+#
+#     ##
+#     # The spell dictionary used by the spell-checking plugin.
+#
+#     attr_accessor :spell_dictionary
+#
 #   end
 #
 # == Option Validators
@@ -151,7 +164,7 @@ class RDoc::Options
   ##
   # Files matching this pattern will be excluded
 
-  attr_accessor :exclude
+  attr_writer :exclude
 
   ##
   # The list of files to be processed
@@ -202,6 +215,16 @@ class RDoc::Options
   attr_accessor :line_numbers
 
   ##
+  # The output locale.
+
+  attr_accessor :locale
+
+  ##
+  # The directory where locale data live.
+
+  attr_accessor :locale_dir
+
+  ##
   # Name of the file, class or module to display in the initial index page (if
   # not specified the first file we encounter is used)
 
@@ -227,6 +250,10 @@ class RDoc::Options
   # The OptionParser for this instance
 
   attr_accessor :option_parser
+
+  ##
+  # Output heading decorations?
+  attr_accessor :output_decoration
 
   ##
   # Directory where guides, FAQ, and other pages not associated with a class
@@ -277,6 +304,11 @@ class RDoc::Options
   attr_accessor :template_dir
 
   ##
+  # Additional template stylesheets
+
+  attr_accessor :template_stylesheets
+
+  ##
   # Documentation title
 
   attr_accessor :title
@@ -297,11 +329,14 @@ class RDoc::Options
   attr_accessor :webcvs
 
   ##
-  # Minimum visibility of a documented method. One of +:public+,
-  # +:protected+, +:private+. May be overridden on a per-method
-  # basis with the :doc: directive.
+  # Minimum visibility of a documented method. One of +:public+, +:protected+,
+  # +:private+ or +:nodoc+.
+  #
+  # The +:nodoc+ visibility ignores all directives related to visibility.  The
+  # other visibilities may be overridden on a per-method basis with the :doc:
+  # directive.
 
-  attr_accessor :visibility
+  attr_reader :visibility
 
   def initialize # :nodoc:
     init_ivars
@@ -319,12 +354,16 @@ class RDoc::Options
     @generators = RDoc::RDoc::GENERATORS
     @hyperlink_all = false
     @line_numbers = false
+    @locale = nil
+    @locale_name = nil
+    @locale_dir = 'locale'
     @main_page = nil
     @markup = 'rdoc'
     @coverage_report = false
     @op_dir = nil
     @page_dir = nil
     @pipe = false
+    @output_decoration = true
     @rdoc_include = []
     @root = Pathname(Dir.pwd)
     @show_hash = false
@@ -333,35 +372,30 @@ class RDoc::Options
     @tab_width = 8
     @template = nil
     @template_dir = nil
+    @template_stylesheets = []
     @title = nil
     @update_output_dir = true
     @verbosity = 1
     @visibility = :protected
     @webcvs = nil
     @write_options = false
-
-    if Object.const_defined? :Encoding then
-      @encoding = Encoding::UTF_8
-      @charset = @encoding.name
-    else
-      @encoding = nil
-      @charset = 'UTF-8'
-    end
+    @encoding = Encoding::UTF_8
+    @charset = @encoding.name
   end
 
   def init_with map # :nodoc:
     init_ivars
 
     encoding = map['encoding']
-    @encoding = if Object.const_defined? :Encoding then
-                  encoding ? Encoding.find(encoding) : encoding
-                end
+    @encoding = encoding ? Encoding.find(encoding) : encoding
 
     @charset        = map['charset']
     @exclude        = map['exclude']
     @generator_name = map['generator_name']
     @hyperlink_all  = map['hyperlink_all']
     @line_numbers   = map['line_numbers']
+    @locale_name    = map['locale_name']
+    @locale_dir     = map['locale_dir']
     @main_page      = map['main_page']
     @markup         = map['markup']
     @op_dir         = map['op_dir']
@@ -386,6 +420,8 @@ class RDoc::Options
       @generator_name == other.generator_name and
       @hyperlink_all  == other.hyperlink_all  and
       @line_numbers   == other.line_numbers   and
+      @locale         == other.locale         and
+      @locale_dir     == other.locale_dir and
       @main_page      == other.main_page      and
       @markup         == other.markup         and
       @op_dir         == other.op_dir         and
@@ -458,6 +494,20 @@ class RDoc::Options
   end
 
   ##
+  # Create a regexp for #exclude
+
+  def exclude
+    if @exclude.nil? or Regexp === @exclude then
+      # done, #finish is being re-run
+      @exclude
+    elsif @exclude.empty? then
+      nil
+    else
+      Regexp.new(@exclude.join("|"))
+    end
+  end
+
+  ##
   # Completes any unfinished option setup business such as filtering for
   # existent files, creating a regexp for #exclude and setting a default
   # #template.
@@ -466,14 +516,10 @@ class RDoc::Options
     @op_dir ||= 'doc'
 
     @rdoc_include << "." if @rdoc_include.empty?
+    root = @root.to_s
+    @rdoc_include << root unless @rdoc_include.include?(root)
 
-    if @exclude.nil? or Regexp === @exclude then
-      # done, #finish is being re-run
-    elsif @exclude.empty? then
-      @exclude = nil
-    else
-      @exclude = Regexp.new(@exclude.join("|"))
-    end
+    @exclude = self.exclude
 
     finish_page_dir
 
@@ -485,6 +531,13 @@ class RDoc::Options
     unless @template then
       @template     = @generator_name
       @template_dir = template_dir_for @template
+    end
+
+    if @locale_name
+      @locale = RDoc::I18n::Locale[@locale_name]
+      @locale.load(@locale_dir)
+    else
+      @locale = nil
     end
 
     self
@@ -579,15 +632,16 @@ Usage: #{opt.program_name} [options] [names...]
       end
 
       parsers.sort.each do |parser, regexp|
-        opt.banner << "  - #{parser}: #{regexp.join ', '}\n"
+        opt.banner += "  - #{parser}: #{regexp.join ', '}\n"
       end
+      opt.banner += "  - TomDoc:  Only in ruby files\n"
 
-      opt.banner << "\n  The following options are deprecated:\n\n"
+      opt.banner += "\n  The following options are deprecated:\n\n"
 
       name_length = DEPRECATED.keys.sort_by { |k| k.length }.last.length
 
       DEPRECATED.sort_by { |k,| k }.each do |name, reason|
-        opt.banner << "    %*1$2$s  %3$s\n" % [-name_length, name, reason]
+        opt.banner += "    %*1$2$s  %3$s\n" % [-name_length, name, reason]
       end
 
       opt.accept Template do |template|
@@ -635,18 +689,28 @@ Usage: #{opt.program_name} [options] [names...]
       opt.separator "Parsing options:"
       opt.separator nil
 
-      if Object.const_defined? :Encoding then
-        opt.on("--encoding=ENCODING", "-e", Encoding.list.map { |e| e.name },
-               "Specifies the output encoding.  All files",
-               "read will be converted to this encoding.",
-               "The default encoding is UTF-8.",
-               "--encoding is preferred over --charset") do |value|
-                 @encoding = Encoding.find value
-                 @charset = @encoding.name # may not be valid value
-               end
+      opt.on("--encoding=ENCODING", "-e", Encoding.list.map { |e| e.name },
+             "Specifies the output encoding.  All files",
+             "read will be converted to this encoding.",
+             "The default encoding is UTF-8.",
+             "--encoding is preferred over --charset") do |value|
+               @encoding = Encoding.find value
+               @charset = @encoding.name # may not be valid value
+             end
 
-        opt.separator nil
+      opt.separator nil
+
+      opt.on("--locale=NAME",
+             "Specifies the output locale.") do |value|
+        @locale_name = value
       end
+
+      opt.on("--locale-data-dir=DIR",
+             "Specifies the directory where locale data live.") do |value|
+        @locale_dir = value
+      end
+
+      opt.separator nil
 
       opt.on("--all", "-a",
              "Synonym for --visibility=private.") do |value|
@@ -695,17 +759,19 @@ Usage: #{opt.program_name} [options] [names...]
 
       opt.separator nil
 
-      opt.on("--tab-width=WIDTH", "-w", OptionParser::DecimalInteger,
+      opt.on("--tab-width=WIDTH", "-w", Integer,
              "Set the width of tab characters.") do |value|
+        raise OptionParser::InvalidArgument,
+              "#{value} is an invalid tab width" if value <= 0
         @tab_width = value
       end
 
       opt.separator nil
 
-      opt.on("--visibility=VISIBILITY", "-V", RDoc::VISIBILITIES,
+      opt.on("--visibility=VISIBILITY", "-V", RDoc::VISIBILITIES + [:nodoc],
              "Minimum visibility to document a method.",
-             "One of 'public', 'protected' (the default)",
-             "or 'private'. Can be abbreviated.") do |value|
+             "One of 'public', 'protected' (the default),",
+             "'private' or 'nodoc' (show everything)") do |value|
         @visibility = value
       end
 
@@ -861,6 +927,14 @@ Usage: #{opt.program_name} [options] [names...]
 
       opt.separator nil
 
+      opt.on("--template-stylesheets=FILES", PathArray,
+             "Set (or add to) the list of files to",
+             "include with the html template.") do |value|
+        @template_stylesheets << value
+      end
+
+      opt.separator nil
+
       opt.on("--title=TITLE", "-t",
              "Set TITLE as the title for HTML output.") do |value|
         @title = value
@@ -916,7 +990,7 @@ Usage: #{opt.program_name} [options] [names...]
         check_generator
 
         @generator_name = "ri"
-        @op_dir = RDoc::RI::Paths::SITEDIR
+        @op_dir = RDoc::RI::Paths.site_dir
         setup_generator
       end
 
@@ -963,15 +1037,21 @@ Usage: #{opt.program_name} [options] [names...]
 
       opt.separator nil
 
-      opt.on("--verbose", "-v",
+      opt.on("--verbose", "-V",
              "Display extra progress as RDoc parses") do |value|
         @verbosity = 2
       end
 
       opt.separator nil
 
-      opt.on("--help",
-             "Display this help") do
+      opt.on("--version", "-v", "print the version") do
+        puts opt.version
+        exit
+      end
+
+      opt.separator nil
+
+      opt.on("--help", "-h", "Display this help") do
         RDoc::RDoc::GENERATORS.each_key do |generator|
           setup_generator generator
         end
@@ -991,7 +1071,7 @@ Usage: #{opt.program_name} [options] [names...]
 
     begin
       opts.parse! argv
-    rescue OptionParser::InvalidArgument, OptionParser::InvalidOption => e
+    rescue OptionParser::ParseError => e
       if DEPRECATED[e.args.first] then
         deprecated << e.args.first
       elsif %w[--format --ri -r --ri-site -R].include? e.args.first then
@@ -1015,20 +1095,24 @@ Usage: #{opt.program_name} [options] [names...]
 
     unless quiet then
       deprecated.each do |opt|
-        $stderr.puts 'option ' << opt << ' is deprecated: ' << DEPRECATED[opt]
+        $stderr.puts 'option ' + opt + ' is deprecated: ' + DEPRECATED[opt]
       end
+    end
 
-      unless invalid.empty? then
-        invalid = "invalid options: #{invalid.join ', '}"
+    unless invalid.empty? then
+      invalid = "invalid options: #{invalid.join ', '}"
 
-        if ignore_invalid then
+      if ignore_invalid then
+        unless quiet then
           $stderr.puts invalid
           $stderr.puts '(invalid options are ignored)'
-        else
-          $stderr.puts opts
-          $stderr.puts invalid
-          exit 1
         end
+      else
+        unless quiet then
+          $stderr.puts opts
+        end
+        $stderr.puts invalid
+        exit 1
       end
     end
 
@@ -1111,16 +1195,19 @@ Usage: #{opt.program_name} [options] [names...]
     end
   end
 
-  ##
-  # This is compatibility code for syck
+  # Sets the minimum visibility of a documented method.
+  #
+  # Accepts +:public+, +:protected+, +:private+, +:nodoc+, or +:all+.
+  #
+  # When +:all+ is passed, visibility is set to +:private+, similarly to
+  # RDOCOPT="--all", see #visibility for more information.
 
-  def to_yaml opts = {} # :nodoc:
-    return super if YAML.const_defined?(:ENGINE) and not YAML::ENGINE.syck?
-
-    YAML.quick_emit self, opts do |out|
-      out.map taguri, to_yaml_style do |map|
-        encode_with map
-      end
+  def visibility= visibility
+    case visibility
+    when :all
+      @visibility = :private
+    else
+      @visibility = visibility
     end
   end
 
@@ -1138,12 +1225,11 @@ Usage: #{opt.program_name} [options] [names...]
   def write_options
     RDoc.load_yaml
 
-    open '.rdoc_options', 'w' do |io|
-      io.set_encoding Encoding::UTF_8 if Object.const_defined? :Encoding
+    File.open '.rdoc_options', 'w' do |io|
+      io.set_encoding Encoding::UTF_8
 
       YAML.dump self, io
     end
   end
 
 end
-

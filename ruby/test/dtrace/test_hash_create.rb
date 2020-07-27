@@ -1,4 +1,5 @@
-require 'dtrace/helper'
+# frozen_string_literal: false
+require_relative 'helper'
 
 module DTrace
   class TestHashCreate < TestCase
@@ -21,11 +22,11 @@ module DTrace
     end
 
     def test_hash_lit_elements
-      trap_probe(probe, '{ :foo => :bar }') { |_,rbfile,saw|
-        saw = saw.map(&:split).find_all { |num, file, line|
+      trap_probe(probe, '{ :foo => :bar }') { |_,rbfile,orig|
+        saw = orig.map(&:split).find_all { |num, file, line|
           file == rbfile && num == '2'
         }
-        assert_operator saw.length, :>, 0
+        assert_operator saw.length, :>, 0, orig
       }
     end
 

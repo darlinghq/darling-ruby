@@ -1,4 +1,5 @@
-require 'rdoc/test_case'
+# frozen_string_literal: true
+require 'minitest_helper'
 
 class TestRDocMarkupDocument < RDoc::TestCase
 
@@ -6,13 +7,6 @@ class TestRDocMarkupDocument < RDoc::TestCase
     super
 
     @d = @RM::Document.new
-  end
-
-  def mu_pp obj
-    s = ''
-    s = PP.pp obj, s
-    s.force_encoding Encoding.default_external if defined? Encoding
-    s.chomp
   end
 
   def test_append

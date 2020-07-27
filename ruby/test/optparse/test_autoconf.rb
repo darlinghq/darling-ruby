@@ -1,3 +1,4 @@
+# frozen_string_literal: false
 require 'test/unit'
 require 'optparse/ac'
 
@@ -13,7 +14,7 @@ class TestOptionParser::AutoConf < Test::Unit::TestCase
   end
 
   class DummyOutput < String
-    alias write <<
+    alias write concat
   end
   def no_error(*args)
     $stderr, stderr = DummyOutput.new, $stderr

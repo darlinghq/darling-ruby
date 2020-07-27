@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 ##
 # RDoc::Markup parses plain text documents and attempts to decompose them into
 # their constituent parts.  Some of these parts are high-level: paragraphs,
@@ -59,22 +60,21 @@
 #
 #   require 'rdoc'
 #
-#   h = RDoc::Markup::ToHtml.new
+#   h = RDoc::Markup::ToHtml.new(RDoc::Options.new)
 #
 #   puts h.convert(input_string)
 #
 # You can extend the RDoc::Markup parser to recognize new markup
-# sequences, and to add special processing for text that matches a
-# regular expression.  Here we make WikiWords significant to the parser,
-# and also make the sequences {word} and \<no>text...</no> signify
+# sequences, and to add regexp handling. Here we make WikiWords significant to
+# the parser, and also make the sequences {word} and \<no>text...</no> signify
 # strike-through text.  We then subclass the HTML output class to deal
 # with these:
 #
 #   require 'rdoc'
 #
 #   class WikiHtml < RDoc::Markup::ToHtml
-#     def handle_special_WIKIWORD(special)
-#       "<font color=red>" + special.text + "</font>"
+#     def handle_regexp_WIKIWORD(target)
+#       "<font color=red>" + target.text + "</font>"
 #     end
 #   end
 #
@@ -82,9 +82,9 @@
 #   markup.add_word_pair("{", "}", :STRIKE)
 #   markup.add_html("no", :STRIKE)
 #
-#   markup.add_special(/\b([A-Z][a-z]+[A-Z]\w+)/, :WIKIWORD)
+#   markup.add_regexp_handling(/\b([A-Z][a-z]+[A-Z]\w+)/, :WIKIWORD)
 #
-#   wh = WikiHtml.new markup
+#   wh = WikiHtml.new RDoc::Options.new, markup
 #   wh.add_tag(:STRIKE, "<strike>", "</strike>")
 #
 #   puts "<body>#{wh.convert ARGF.read}</body>"
@@ -127,7 +127,7 @@
 # left, so the amount of indentation of verbatim text is unimportant.
 #
 # For HTML output RDoc makes a small effort to determine if a verbatim section
-# contains ruby source code.  If so, the verbatim block will be marked up as
+# contains Ruby source code.  If so, the verbatim block will be marked up as
 # HTML.  Triggers include "def", "class", "module", "require", the "hash
 # rocket"# (=>) or a block call with a parameter.
 #
@@ -163,7 +163,7 @@
 #
 # The header's id would be:
 #
-#   <h1 id="method-i-do_fun_things-label-Example">Example</h3>
+#   <h1 id="method-i-do_fun_things-label-Example">Example</h1>
 #
 # The label can be linked-to using <tt>SomeClass@Headers</tt>.  See
 # {Links}[RDoc::Markup@Links] for further details.
@@ -171,22 +171,13 @@
 # === Rules
 #
 # A line starting with three or more hyphens (at the current indent)
-# generates a horizontal rule.  The more hyphens, the thicker the rule
-# (within reason, and if supported by the output device).
-#
-# In the case of HTML output, three dashes generate a 1-pixel high rule,
-# four dashes result in 2 pixels, and so on. The actual height is limited
-# to 10 pixels:
+# generates a horizontal rule.
 #
 #   ---
-#   -----
-#   -----------------------------------------------------
 #
 # produces:
 #
 # ---
-# -----
-# -----------------------------------------------------
 #
 # === Simple Lists
 #
@@ -356,11 +347,17 @@
 # with <tt>+</tt> like <tt>RDoc::Markup@Escaping+Text+Markup</tt>.
 # Punctuation and other special characters must be escaped like CGI.escape.
 #
+# The <tt>@</tt> can also be used to link to sections.  If a section and a
+# heading share the same name the section is preferred for the link.
+#
 # Links can also be of the form <tt>label[url]</tt>, in which case +label+ is
 # used in the displayed text, and +url+ is used as the target.  If +label+
 # contains multiple words, put it in braces: <tt>{multi word label}[url]</tt>.
 # The +url+ may be an +http:+-type link or a cross-reference to a class,
 # module or method with a label.
+#
+# Links with the <code>rdoc-image:</code> scheme will create an image tag for
+# HTML output.  Only fully-qualified URLs are supported.
 #
 # Links with the <tt>rdoc-ref:</tt> scheme will link to the referenced class,
 # module, method, file, etc.  If the referenced item is does not exist
@@ -379,7 +376,7 @@
 #
 # Example links:
 #
-#   https://github.com/rdoc/rdoc
+#   https://github.com/ruby/rdoc
 #   mailto:user@example.com
 #   {RDoc Documentation}[http://rdoc.rubyforge.org]
 #   {RDoc Markup}[rdoc-ref:RDoc::Markup]
@@ -683,7 +680,7 @@
 #
 # [+:markup:+ _type_]
 #   Overrides the default markup type for this comment with the specified
-#   markup type.  For ruby files, if the first comment contains this directive
+#   markup type.  For Ruby files, if the first comment contains this directive
 #   it is applied automatically to all comments in the file.
 #
 #   Unless you are converting between markup formats you should use a
@@ -713,7 +710,7 @@
 #     def some_method
 #       # ...
 #
-#   See Markup@DEVELOPERS for instructions on adding a new markup format.
+#   See Markup@CONTRIBUTING for instructions on adding a new markup format.
 #
 # [+:include:+ _filename_]
 #   Include the contents of the named file at this point. This directive
@@ -766,7 +763,7 @@ Ruby #{RUBY_VERSION}-p#{RUBY_PATCHLEVEL} #{RUBY_RELEASE_DATE}
 
 Please file a bug report with the above information at:
 
-https://github.com/rdoc/rdoc/issues
+https://github.com/ruby/rdoc/issues
 
     EOF
     raise
@@ -802,13 +799,12 @@ https://github.com/rdoc/rdoc/issues
   # Add to other inline sequences.  For example, we could add WikiWords using
   # something like:
   #
-  #    parser.add_special(/\b([A-Z][a-z]+[A-Z]\w+)/, :WIKIWORD)
+  #    parser.add_regexp_handling(/\b([A-Z][a-z]+[A-Z]\w+)/, :WIKIWORD)
   #
-  # Each wiki word will be presented to the output formatter via the
-  # accept_special method.
+  # Each wiki word will be presented to the output formatter.
 
-  def add_special(pattern, name)
-    @attribute_manager.add_special(pattern, name)
+  def add_regexp_handling(pattern, name)
+    @attribute_manager.add_regexp_handling(pattern, name)
   end
 
   ##
@@ -834,7 +830,7 @@ https://github.com/rdoc/rdoc/issues
   autoload :AttrSpan,              'rdoc/markup/attr_span'
   autoload :Attributes,            'rdoc/markup/attributes'
   autoload :AttributeManager,      'rdoc/markup/attribute_manager'
-  autoload :Special,               'rdoc/markup/special'
+  autoload :RegexpHandling,        'rdoc/markup/regexp_handling'
 
   # RDoc::Markup AST
   autoload :BlankLine,             'rdoc/markup/blank_line'

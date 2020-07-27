@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'rubygems'
 require 'rubygems/test_case'
 require 'rubygems/rdoc'
@@ -9,7 +10,7 @@ class TestGemRDoc < Gem::TestCase
   def setup
     super
 
-    @a = quick_spec 'a' do |s|
+    @a = util_spec 'a' do |s|
       s.rdoc_options = %w[--main MyTitle]
       s.extra_rdoc_files = %w[README]
     end
@@ -48,7 +49,7 @@ class TestGemRDoc < Gem::TestCase
   end
 
   def test_initialize
-    if rdoc_4? then
+    if rdoc_4?
       refute @hook.generate_rdoc
     else
       assert @hook.generate_rdoc
@@ -222,6 +223,7 @@ class TestGemRDoc < Gem::TestCase
 
   def test_remove_unwritable
     skip 'chmod not supported' if Gem.win_platform?
+    skip 'skipped in root privilege' if Process.uid.zero?
     FileUtils.mkdir_p @a.base_dir
     FileUtils.chmod 0, @a.base_dir
 
@@ -250,6 +252,7 @@ class TestGemRDoc < Gem::TestCase
 
   def test_setup_unwritable
     skip 'chmod not supported' if Gem.win_platform?
+    skip 'skipped in root privilege' if Process.uid.zero?
     FileUtils.mkdir_p @a.doc_dir
     FileUtils.chmod 0, @a.doc_dir
 
@@ -266,4 +269,3 @@ class TestGemRDoc < Gem::TestCase
   end
 
 end
-

@@ -1,6 +1,6 @@
+# frozen_string_literal: true
 require 'test/unit'
 require 'tempfile'
-require_relative 'ruby/envutil'
 
 class TestTempfile < Test::Unit::TestCase
   def initialize(*)
@@ -19,6 +19,10 @@ class TestTempfile < Test::Unit::TestCase
     end
   end
 
+  def test_leackchecker
+    assert_instance_of(Tempfile, Tempfile.allocate)
+  end
+
   def test_basic
     t = tempfile("foo")
     path = t.path
@@ -34,6 +38,8 @@ class TestTempfile < Test::Unit::TestCase
     assert_nothing_raised(SecurityError, bug3733) {
       proc {$SAFE = 1; File.expand_path(Dir.tmpdir)}.call
     }
+  ensure
+    $SAFE = 0
   end
 
   def test_saves_in_given_directory
@@ -57,6 +63,11 @@ class TestTempfile < Test::Unit::TestCase
     assert_match(/^foo/, File.basename(t.path))
   end
 
+  def test_default_basename
+    t = tempfile
+    assert_file.exist?(t.path)
+  end
+
   def test_basename_with_suffix
     t = tempfile(["foo", ".txt"])
     assert_match(/^foo/, File.basename(t.path))
@@ -68,10 +79,10 @@ class TestTempfile < Test::Unit::TestCase
     path = t.path
 
     t.close
-    assert File.exist?(path)
+    assert_file.exist?(path)
 
     t.unlink
-    assert !File.exist?(path)
+    assert_file.not_exist?(path)
 
     assert_nil t.path
   end
@@ -94,7 +105,7 @@ class TestTempfile < Test::Unit::TestCase
     begin
       path = tempfile.path
       tempfile.unlink
-      assert !File.exist?(path)
+      assert_file.not_exist?(path)
       tempfile.write("hello ")
       tempfile.write("world\n")
       tempfile.rewind
@@ -107,18 +118,18 @@ class TestTempfile < Test::Unit::TestCase
 
   def test_close_and_close_p
     t = tempfile("foo")
-    assert !t.closed?
+    assert_not_predicate(t, :closed?)
     t.close
-    assert t.closed?
+    assert_predicate(t, :closed?)
   end
 
   def test_close_with_unlink_now_true_works
     t = tempfile("foo")
     path = t.path
     t.close(true)
-    assert t.closed?
+    assert_predicate(t, :closed?)
     assert_nil t.path
-    assert !File.exist?(path)
+    assert_file.not_exist?(path)
   end
 
   def test_close_with_unlink_now_true_does_not_unlink_if_already_unlinked
@@ -128,7 +139,7 @@ class TestTempfile < Test::Unit::TestCase
     File.open(path, "w").close
     begin
       t.close(true)
-      assert File.exist?(path)
+      assert_file.exist?(path)
     ensure
       File.unlink(path) rescue nil
     end
@@ -138,9 +149,9 @@ class TestTempfile < Test::Unit::TestCase
     t = tempfile("foo")
     path = t.path
     t.close!
-    assert t.closed?
+    assert_predicate(t, :closed?)
     assert_nil t.path
-    assert !File.exist?(path)
+    assert_file.not_exist?(path)
   end
 
   def test_close_bang_does_not_unlink_if_already_unlinked
@@ -150,7 +161,7 @@ class TestTempfile < Test::Unit::TestCase
     File.open(path, "w").close
     begin
       t.close!
-      assert File.exist?(path)
+      assert_file.exist?(path)
     ensure
       File.unlink(path) rescue nil
     end
@@ -164,7 +175,7 @@ puts path
 file.close!
 File.open(path, "w").close
     EOS
-      assert File.exist?(filename)
+      assert_file.exist?(filename)
       File.unlink(filename)
       assert_nil error
     end
@@ -178,7 +189,7 @@ File.open(path, "w").close
     EOS
       if !filename.empty?
         # POSIX unlink semantics supported, continue with test
-        assert File.exist?(filename)
+        assert_file.exist?(filename)
         File.unlink(filename)
       end
       assert_nil error
@@ -202,7 +213,8 @@ File.open(path, "w").close
     assert_in_out_err('-rtempfile', <<-'EOS') do |(filename), (error)|
 puts Tempfile.new('foo').path
     EOS
-      assert !File.exist?(filename)
+      assert_file.for("tempfile must not be exist after GC.").not_exist?(filename)
+      assert_nil(error)
     end
   end
 
@@ -236,11 +248,18 @@ puts Tempfile.new('foo').path
     assert_equal 5, t.size
   end
 
+  def test_size_on_empty_file
+    t = tempfile("foo")
+    t.write("")
+    t.close
+    assert_equal 0, t.size
+  end
+
   def test_concurrency
     threads = []
     tempfiles = []
-    lock = Mutex.new
-    cond = ConditionVariable.new
+    lock = Thread::Mutex.new
+    cond = Thread::ConditionVariable.new
     start = false
 
     4.times do
@@ -294,7 +313,6 @@ puts Tempfile.new('foo').path
   end
 
   def test_tempfile_encoding_ascii8bit
-    default_external=Encoding.default_external
     t = tempfile("TEST",:encoding=>"ascii-8bit")
     t.write("\xE6\x9D\xBE\xE6\xB1\x9F")
     t.rewind
@@ -302,7 +320,6 @@ puts Tempfile.new('foo').path
   end
 
   def test_tempfile_encoding_ascii8bit2
-    default_external=Encoding.default_external
     t = tempfile("TEST",Dir::tmpdir,:encoding=>"ascii-8bit")
     t.write("\xE6\x9D\xBE\xE6\xB1\x9F")
     t.rewind
@@ -319,5 +336,73 @@ puts Tempfile.new('foo').path
       assert_equal(0600, t.stat.mode & 0777)
     end
   end
-end
 
+  def test_create_with_block
+    path = nil
+    Tempfile.create("tempfile-create") {|f|
+      path = f.path
+      assert_file.exist?(path)
+    }
+    assert_file.not_exist?(path)
+
+    Tempfile.create("tempfile-create") {|f|
+      path = f.path
+      f.close
+      File.unlink(f.path)
+    }
+    assert_file.not_exist?(path)
+  end
+
+  def test_create_without_block
+    path = nil
+    f = Tempfile.create("tempfile-create")
+    path = f.path
+    assert_file.exist?(path)
+    f.close
+    assert_file.exist?(path)
+  ensure
+    f&.close
+    File.unlink path if path
+  end
+
+  def test_create_default_basename
+    path = nil
+    Tempfile.create {|f|
+      path = f.path
+      assert_file.exist?(path)
+    }
+    assert_file.not_exist?(path)
+  end
+
+  TRAVERSAL_PATH = Array.new(Dir.pwd.split('/').count, '..').join('/') + Dir.pwd + '/'
+
+  def test_open_traversal_dir
+    expect = Dir.glob(TRAVERSAL_PATH + '*').count
+    t = Tempfile.open([TRAVERSAL_PATH, 'foo'])
+    actual = Dir.glob(TRAVERSAL_PATH + '*').count
+    assert_equal expect, actual
+  ensure
+    t.close!
+  end
+
+  def test_new_traversal_dir
+    expect = Dir.glob(TRAVERSAL_PATH + '*').count
+    t = Tempfile.new(TRAVERSAL_PATH + 'foo')
+    actual = Dir.glob(TRAVERSAL_PATH + '*').count
+    assert_equal expect, actual
+  ensure
+    t&.close!
+  end
+
+  def test_create_traversal_dir
+    expect = Dir.glob(TRAVERSAL_PATH + '*').count
+    t = Tempfile.create(TRAVERSAL_PATH + 'foo')
+    actual = Dir.glob(TRAVERSAL_PATH + '*').count
+    assert_equal expect, actual
+  ensure
+    if t
+      t.close
+      File.unlink(t.path)
+    end
+  end
+end

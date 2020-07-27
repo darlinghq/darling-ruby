@@ -4,13 +4,12 @@
 =end
 
 require 'drb/drb'
-require 'thread'
 
 class Logger
   def initialize(fname)
     @fname = fname.to_s
     @fp = File.open(@fname, "a+")
-    @queue = Queue.new
+    @queue = Thread::Queue.new
     @th = Thread.new { self.flush }
   end
 
@@ -21,8 +20,8 @@ class Logger
   def flush
     begin
       while(1)
-	@fp.puts(@queue.pop)
-	@fp.flush
+        @fp.puts(@queue.pop)
+        @fp.flush
       end
     ensure
       @fp.close

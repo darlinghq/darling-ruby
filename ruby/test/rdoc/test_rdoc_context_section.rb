@@ -1,4 +1,5 @@
-require 'rdoc/test_case'
+# frozen_string_literal: true
+require 'minitest_helper'
 
 class TestRDocContextSection < RDoc::TestCase
 
@@ -11,13 +12,6 @@ class TestRDocContextSection < RDoc::TestCase
 
     @S = RDoc::Context::Section
     @s = @S.new @klass, 'section', comment('# comment', @top_level)
-  end
-
-  def mu_pp obj
-    s = ''
-    s = PP.pp obj, s
-    s.force_encoding Encoding.default_external if defined? Encoding
-    s.chomp
   end
 
   def test_add_comment
@@ -54,12 +48,36 @@ class TestRDocContextSection < RDoc::TestCase
     assert_equal 'one+two', @S.new(nil, 'one two', nil).aref
   end
 
+  def test_eql_eh
+    other = @S.new @klass, 'other', comment('# comment', @top_level)
+
+    assert @s.eql? @s
+    assert @s.eql? @s.dup
+    refute @s.eql? other
+  end
+
+  def test_equals
+    other = @S.new @klass, 'other', comment('# comment', @top_level)
+
+    assert_equal @s, @s
+    assert_equal @s, @s.dup
+    refute_equal @s, other
+  end
+
   def test_extract_comment
     assert_equal '',    @s.extract_comment(comment('')).text
     assert_equal '',    @s.extract_comment(comment("# :section: b\n")).text
     assert_equal '# c', @s.extract_comment(comment("# :section: b\n# c")).text
     assert_equal '# c',
                  @s.extract_comment(comment("# a\n# :section: b\n# c")).text
+  end
+
+  def test_hash
+    other = @S.new @klass, 'other', comment('# comment', @top_level)
+
+    assert_equal @s.hash, @s.hash
+    assert_equal @s.hash, @s.dup.hash
+    refute_equal @s.hash, other.hash
   end
 
   def test_marshal_dump

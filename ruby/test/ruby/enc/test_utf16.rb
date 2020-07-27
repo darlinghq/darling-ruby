@@ -1,3 +1,4 @@
+# frozen_string_literal: false
 require 'test/unit'
 
 class TestUTF16 < Test::Unit::TestCase
@@ -55,59 +56,71 @@ EOT
   # tests start
 
   def test_utf16be_valid_encoding
-    [
-      "\x00\x00",
-      "\xd7\xff",
-      "\xd8\x00\xdc\x00",
-      "\xdb\xff\xdf\xff",
-      "\xe0\x00",
-      "\xff\xff",
-    ].each {|s|
-      s.force_encoding("utf-16be")
-      assert_equal(true, s.valid_encoding?, "#{encdump s}.valid_encoding?")
-    }
-    [
-      "\x00",
-      "\xd7",
-      "\xd8\x00",
-      "\xd8\x00\xd8\x00",
-      "\xdc\x00",
-      "\xdc\x00\xd8\x00",
-      "\xdc\x00\xdc\x00",
-      "\xe0",
-      "\xff",
-    ].each {|s|
-      s.force_encoding("utf-16be")
-      assert_equal(false, s.valid_encoding?, "#{encdump s}.valid_encoding?")
-    }
+    all_assertions do |a|
+      [
+        "\x00\x00",
+        "\xd7\xff",
+        "\xd8\x00\xdc\x00",
+        "\xdb\xff\xdf\xff",
+        "\xe0\x00",
+        "\xff\xff",
+      ].each {|s|
+        s.force_encoding("utf-16be")
+        a.for(s) {
+          assert_predicate(s, :valid_encoding?, "#{encdump s}.valid_encoding?")
+        }
+      }
+      [
+        "\x00",
+        "\xd7",
+        "\xd8\x00",
+        "\xd8\x00\xd8\x00",
+        "\xdc\x00",
+        "\xdc\x00\xd8\x00",
+        "\xdc\x00\xdc\x00",
+        "\xe0",
+        "\xff",
+      ].each {|s|
+        s.force_encoding("utf-16be")
+        a.for(s) {
+          assert_not_predicate(s, :valid_encoding?, "#{encdump s}.valid_encoding?")
+        }
+      }
+    end
   end
 
   def test_utf16le_valid_encoding
-    [
-      "\x00\x00",
-      "\xff\xd7",
-      "\x00\xd8\x00\xdc",
-      "\xff\xdb\xff\xdf",
-      "\x00\xe0",
-      "\xff\xff",
-    ].each {|s|
-      s.force_encoding("utf-16le")
-      assert_equal(true, s.valid_encoding?, "#{encdump s}.valid_encoding?")
-    }
-    [
-      "\x00",
-      "\xd7",
-      "\x00\xd8",
-      "\x00\xd8\x00\xd8",
-      "\x00\xdc",
-      "\x00\xdc\x00\xd8",
-      "\x00\xdc\x00\xdc",
-      "\xe0",
-      "\xff",
-    ].each {|s|
-      s.force_encoding("utf-16le")
-      assert_equal(false, s.valid_encoding?, "#{encdump s}.valid_encoding?")
-    }
+    all_assertions do |a|
+      [
+        "\x00\x00",
+        "\xff\xd7",
+        "\x00\xd8\x00\xdc",
+        "\xff\xdb\xff\xdf",
+        "\x00\xe0",
+        "\xff\xff",
+      ].each {|s|
+        s.force_encoding("utf-16le")
+        a.for(s) {
+          assert_predicate(s, :valid_encoding?, "#{encdump s}.valid_encoding?")
+        }
+      }
+      [
+        "\x00",
+        "\xd7",
+        "\x00\xd8",
+        "\x00\xd8\x00\xd8",
+        "\x00\xdc",
+        "\x00\xdc\x00\xd8",
+        "\x00\xdc\x00\xdc",
+        "\xe0",
+        "\xff",
+      ].each {|s|
+        s.force_encoding("utf-16le")
+        a.for(s) {
+          assert_not_predicate(s, :valid_encoding?, "#{encdump s}.valid_encoding?")
+        }
+      }
+    end
   end
 
   def test_strftime
@@ -122,7 +135,7 @@ EOT
 
   def test_sym_eq
     s = "aa".force_encoding("utf-16le")
-    assert(s.intern != :aa, "#{encdump s}.intern != :aa")
+    assert_not_equal(:aa, s.intern, "#{encdump s}.intern != :aa")
   end
 
   def test_compatible
@@ -253,10 +266,10 @@ EOT
 
   def test_succ
     s = "\xff\xff".force_encoding("utf-16be")
-    assert(s.succ.valid_encoding?, "#{encdump s}.succ.valid_encoding?")
+    assert_predicate(s.succ, :valid_encoding?, "#{encdump s}.succ.valid_encoding?")
 
     s = "\xdb\xff\xdf\xff".force_encoding("utf-16be")
-    assert(s.succ.valid_encoding?, "#{encdump s}.succ.valid_encoding?")
+    assert_predicate(s.succ, :valid_encoding?, "#{encdump s}.succ.valid_encoding?")
   end
 
   def test_regexp_union
@@ -366,7 +379,7 @@ EOT
   def test_regexp_escape
     s = "\0*".force_encoding("UTF-16BE")
     r = Regexp.new(Regexp.escape(s))
-    assert(r =~ s, "#{encdump(r)} =~ #{encdump(s)}")
+    assert_match(r, s, "#{encdump(r)} =~ #{encdump(s)}")
   end
 
   def test_casecmp2

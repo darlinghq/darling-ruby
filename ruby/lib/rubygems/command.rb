@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 #--
 # Copyright 2006 by Chad Fowler, Rich Kilmer, Jim Weirich and others.
 # All rights reserved.
@@ -148,17 +149,27 @@ class Gem::Command
 
   ##
   # Display to the user that a gem couldn't be found and reasons why
+  #--
+  # TODO: replace +domain+ with a parameter to suppress suggestions
 
-  def show_lookup_failure(gem_name, version, errors, domain)
+  def show_lookup_failure(gem_name, version, errors, domain, required_by = nil)
+    gem = "'#{gem_name}' (#{version})"
+    msg = String.new "Could not find a valid gem #{gem}"
+
     if errors and !errors.empty?
-      msg = "Could not find a valid gem '#{gem_name}' (#{version}), here is why:\n"
+      msg << ", here is why:\n"
       errors.each { |x| msg << "          #{x.wordy}\n" }
-      alert_error msg
     else
-      alert_error "Could not find a valid gem '#{gem_name}' (#{version}) in any repository"
+      if required_by and gem != required_by
+        msg << " (required by #{required_by}) in any repository"
+      else
+        msg << " in any repository"
+      end
     end
 
-    unless domain == :local then # HACK
+    alert_error msg
+
+    unless domain == :local  # HACK
       suggestions = Gem::SpecFetcher.fetcher.suggest_gems_from_name gem_name
 
       unless suggestions.empty?
@@ -173,7 +184,7 @@ class Gem::Command
   def get_all_gem_names
     args = options[:args]
 
-    if args.nil? or args.empty? then
+    if args.nil? or args.empty?
       raise Gem::CommandLineError,
             "Please specify at least one gem name (e.g. gem build GEMNAME)"
     end
@@ -203,12 +214,12 @@ class Gem::Command
   def get_one_gem_name
     args = options[:args]
 
-    if args.nil? or args.empty? then
+    if args.nil? or args.empty?
       raise Gem::CommandLineError,
             "Please specify a gem name on the command line (e.g. gem build GEMNAME)"
     end
 
-    if args.size > 1 then
+    if args.size > 1
       raise Gem::CommandLineError,
             "Too many gem names (#{args.join(', ')}); please specify only one"
     end
@@ -297,12 +308,22 @@ class Gem::Command
 
     options[:build_args] = build_args
 
-    if options[:help] then
+    if options[:silent]
+      old_ui = self.ui
+      self.ui = ui = Gem::SilentUI.new
+    end
+
+    if options[:help]
       show_help
-    elsif @when_invoked then
+    elsif @when_invoked
       @when_invoked.call options
     else
       execute
+    end
+  ensure
+    if ui
+      self.ui = old_ui
+      ui.close
     end
   end
 
@@ -340,7 +361,7 @@ class Gem::Command
 
   def remove_option(name)
     @option_groups.each do |_, option_list|
-      option_list.reject! { |args, _| args.any? { |x| x =~ /^#{name}/ } }
+      option_list.reject! { |args, _| args.any? { |x| x.is_a?(String) && x =~ /^#{name}/ } }
     end
   end
 
@@ -430,7 +451,7 @@ class Gem::Command
   # Adds a section with +title+ and +content+ to the parser help view.  Used
   # for adding command arguments and default arguments.
 
-  def add_parser_run_info title, content
+  def add_parser_run_info(title, content)
     return if content.empty?
 
     @parser.separator nil
@@ -483,7 +504,6 @@ class Gem::Command
     @parser.separator "  #{header}Options:"
 
     option_list.each do |args, handler|
-      args.select { |arg| arg =~ /^-/ }
       @parser.on(*args) do |value|
         handler.call(value, @options)
       end
@@ -510,15 +530,20 @@ class Gem::Command
   add_common_option('-V', '--[no-]verbose',
                     'Set the verbose level of output') do |value, options|
     # Set us to "really verbose" so the progress meter works
-    if Gem.configuration.verbose and value then
+    if Gem.configuration.verbose and value
       Gem.configuration.verbose = 1
     else
       Gem.configuration.verbose = value
     end
   end
 
-  add_common_option('-q', '--quiet', 'Silence commands') do |value, options|
+  add_common_option('-q', '--quiet', 'Silence command progress meter') do |value, options|
     Gem.configuration.verbose = false
+  end
+
+  add_common_option("--silent",
+                    "Silence RubyGems output") do |value, options|
+    options[:silent] = true
   end
 
   # Backtrace and config-file are added so they show up in the help
@@ -537,9 +562,14 @@ class Gem::Command
                     'Turn on Ruby debugging') do
   end
 
+  add_common_option('--norc',
+                    'Avoid loading any .gemrc file') do
+  end
+
+
   # :stopdoc:
 
-  HELP = <<-HELP
+  HELP = <<-HELP.freeze
 RubyGems is a sophisticated package manager for Ruby.  This is a
 basic help message containing pointers to more information.
 
@@ -557,7 +587,8 @@ basic help message containing pointers to more information.
   Further help:
     gem help commands            list all 'gem' commands
     gem help examples            show some examples of usage
-    gem help platforms           show information about platforms
+    gem help gem_dependencies    gem dependencies file guide
+    gem help platforms           gem platforms guide
     gem help <COMMAND>           show help on COMMAND
                                    (e.g. 'gem help install')
     gem server                   present a web page at
@@ -576,4 +607,3 @@ end
 
 module Gem::Commands
 end
-

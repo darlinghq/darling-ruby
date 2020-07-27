@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 # = net/smtp.rb
 #
 # Copyright (c) 1999-2007 Yukihiro Matsumoto.
@@ -11,15 +12,12 @@
 # This program is free software. You can re-distribute and/or
 # modify this program under the same terms as Ruby itself.
 #
-# NOTE: You can find Japanese version of this document at:
-# http://www.ruby-lang.org/ja/man/html/net_smtp.html
-#
-# $Id: smtp.rb 44980 2014-02-15 15:45:14Z nagachika $
+# $Id: smtp.rb 65505 2018-11-02 17:52:33Z marcandre $
 #
 # See Net::SMTP for documentation.
 #
 
-require 'net/protocol'
+require_relative 'protocol'
 require 'digest/md5'
 require 'timeout'
 begin
@@ -169,9 +167,9 @@ module Net
   #     Net::SMTP.start('your.smtp.server', 25, 'mail.from.domain',
   #                     'Your Account', 'Your Password', :cram_md5)
   #
-  class SMTP
+  class SMTP < Protocol
 
-    Revision = %q$Revision: 44980 $.split[1]
+    Revision = %q$Revision: 65505 $.split[1]
 
     # The default SMTP port number, 25.
     def SMTP.default_port
@@ -569,7 +567,7 @@ module Net
     ensure
       unless @started
         # authentication failed, cancel connection.
-        s.close if s and not s.closed?
+        s.close if s
         @socket = nil
       end
     end
@@ -583,7 +581,7 @@ module Net
       s = ssl_socket(s, @ssl_context)
       logging "TLS connection started"
       s.sync_close = true
-      s.connect
+      ssl_socket_connect(s, @open_timeout)
       if @ssl_context.verify_mode != OpenSSL::SSL::VERIFY_NONE
         s.post_connection_check(@address)
       end
@@ -594,10 +592,8 @@ module Net
     end
 
     def new_internet_message_io(s)
-      io = InternetMessageIO.new(s)
-      io.read_timeout = @read_timeout
-      io.debug_output = @debug_output
-      io
+      InternetMessageIO.new(s, read_timeout: @read_timeout,
+                            debug_output: @debug_output)
     end
 
     def do_helo(helo_domain)
@@ -617,7 +613,7 @@ module Net
     ensure
       @started = false
       @error_occurred = false
-      @socket.close if @socket and not @socket.closed?
+      @socket.close if @socket
       @socket = nil
     end
 
@@ -787,7 +783,7 @@ module Net
 
     def base64_encode(str)
       # expects "str" may not become too long
-      [str].pack('m').gsub(/\s+/, '')
+      [str].pack('m0')
     end
 
     IMASK = 0x36
@@ -815,6 +811,12 @@ module Net
     #
 
     public
+
+    # Aborts the current mail transaction
+
+    def rset
+      getok('RSET')
+    end
 
     def starttls
       getok('STARTTLS')
@@ -895,10 +897,17 @@ module Net
       end
       res = critical {
         check_continue get_response('DATA')
-        if msgstr
-          @socket.write_message msgstr
-        else
-          @socket.write_message_by_block(&block)
+        socket_sync_bak = @socket.io.sync
+        begin
+          @socket.io.sync = false
+          if msgstr
+            @socket.write_message msgstr
+          else
+            @socket.write_message_by_block(&block)
+          end
+        ensure
+          @socket.io.flush
+          @socket.io.sync = socket_sync_bak
         end
         recv_response()
       }
@@ -912,7 +921,15 @@ module Net
 
     private
 
+    def validate_line(line)
+      # A bare CR or LF is not allowed in RFC5321.
+      if /[\r\n]/ =~ line
+        raise ArgumentError, "A line must not contain CR or LF"
+      end
+    end
+
     def getok(reqline)
+      validate_line reqline
       res = critical {
         @socket.writeline reqline
         recv_response()
@@ -922,12 +939,13 @@ module Net
     end
 
     def get_response(reqline)
+      validate_line reqline
       @socket.writeline reqline
       recv_response()
     end
 
     def recv_response
-      buf = ''
+      buf = ''.dup
       while true
         line = @socket.readline
         buf << line << "\n"
@@ -1017,9 +1035,9 @@ module Net
       end
 
       # Creates a CRAM-MD5 challenge. You can view more information on CRAM-MD5
-      # on Wikipedia: http://en.wikipedia.org/wiki/CRAM-MD5
+      # on Wikipedia: https://en.wikipedia.org/wiki/CRAM-MD5
       def cram_md5_challenge
-        @string.split(/ /)[1].unpack('m')[0]
+        @string.split(/ /)[1].unpack1('m')
       end
 
       # Returns a hash of the human readable reply text in the response if it
@@ -1036,7 +1054,7 @@ module Net
         h
       end
 
-      # Determines whether there was an error and raies the appropriate error
+      # Determines whether there was an error and raises the appropriate error
       # based on the reply code of the response
       def exception_class
         case @status

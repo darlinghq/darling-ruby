@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 $DEBUG_RDOC = nil
 
 # :main: README.rdoc
@@ -14,7 +15,7 @@ $DEBUG_RDOC = nil
 #
 # == Roadmap
 #
-# If you think you found a bug in RDoc see DEVELOPERS@Bugs
+# If you think you found a bug in RDoc see CONTRIBUTING@Bugs
 #
 # If you want to use RDoc to create documentation for your Ruby source files,
 # see RDoc::Markup and refer to <tt>rdoc --help</tt> for command line usage.
@@ -42,7 +43,7 @@ $DEBUG_RDOC = nil
 #
 # If you want to write your own output generator see RDoc::Generator.
 #
-# If you want an overview of how RDoc works see DEVELOPERS
+# If you want an overview of how RDoc works see CONTRIBUTING
 #
 # == Credits
 #
@@ -61,10 +62,7 @@ module RDoc
 
   class Error < RuntimeError; end
 
-  ##
-  # RDoc version you are using
-
-  VERSION = '4.0.0'
+  require 'rdoc/version'
 
   ##
   # Method visibilities
@@ -109,6 +107,8 @@ module RDoc
   def self.load_yaml
     begin
       gem 'psych'
+    rescue NameError => e # --disable-gems
+      raise unless e.name == :gem
     rescue Gem::LoadError
     end
 
@@ -121,8 +121,6 @@ module RDoc
   end
 
   autoload :RDoc,           'rdoc/rdoc'
-
-  autoload :TestCase,       'rdoc/test_case'
 
   autoload :CrossReference, 'rdoc/cross_reference'
   autoload :ERBIO,          'rdoc/erbio'
@@ -145,11 +143,11 @@ module RDoc
 
   autoload :KNOWN_CLASSES,  'rdoc/known_classes'
 
-  autoload :RubyLex,        'rdoc/ruby_lex'
-  autoload :RubyToken,      'rdoc/ruby_token'
   autoload :TokenStream,    'rdoc/token_stream'
 
   autoload :Comment,        'rdoc/comment'
+
+  require 'rdoc/i18n'
 
   # code objects
   #
@@ -174,9 +172,9 @@ module RDoc
   autoload :Attr,           'rdoc/attr'
 
   autoload :Constant,       'rdoc/constant'
+  autoload :Mixin,          'rdoc/mixin'
   autoload :Include,        'rdoc/include'
   autoload :Extend,         'rdoc/extend'
   autoload :Require,        'rdoc/require'
 
 end
-

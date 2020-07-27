@@ -1,7 +1,8 @@
+# frozen_string_literal: false
 #
 #   use-loader.rb -
 #   	$Release Version: 0.9.6$
-#   	$Revision: 38515 $
+#   	$Revision: 65505 $
 #   	by Keiju ISHITSUKA(keiju@ruby-lang.org)
 #
 # --
@@ -9,8 +10,8 @@
 #
 #
 
-require "irb/cmd/load"
-require "irb/ext/loader"
+require_relative "../cmd/load"
+require_relative "loader"
 
 class Object
   alias __original__load__IRB_use_loader__ load
@@ -49,20 +50,20 @@ module IRB
     def use_loader=(opt)
 
       if IRB.conf[:USE_LOADER] != opt
-	IRB.conf[:USE_LOADER] = opt
-	if opt
-	  if !$".include?("irb/cmd/load")
-	  end
-	  (class<<@workspace.main;self;end).instance_eval {
-	    alias_method :load, :irb_load
-	    alias_method :require, :irb_require
-	  }
-	else
-	  (class<<@workspace.main;self;end).instance_eval {
-	    alias_method :load, :__original__load__IRB_use_loader__
-	    alias_method :require, :__original__require__IRB_use_loader__
-	  }
-	end
+        IRB.conf[:USE_LOADER] = opt
+        if opt
+          if !$".include?("irb/cmd/load")
+          end
+          (class<<@workspace.main;self;end).instance_eval {
+            alias_method :load, :irb_load
+            alias_method :require, :irb_require
+          }
+        else
+          (class<<@workspace.main;self;end).instance_eval {
+            alias_method :load, :__original__load__IRB_use_loader__
+            alias_method :require, :__original__require__IRB_use_loader__
+          }
+        end
       end
       print "Switch to load/require#{unless use_loader; ' non';end} trace mode.\n" if verbose?
       opt

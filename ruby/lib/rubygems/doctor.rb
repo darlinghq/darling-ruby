@@ -1,6 +1,6 @@
+# frozen_string_literal: true
 require 'rubygems'
 require 'rubygems/user_interaction'
-require 'pathname'
 
 ##
 # Cleans up after a partially-failed uninstall or for an invalid
@@ -24,12 +24,16 @@ class Gem::Doctor
     ['build_info',     '.info'],
     ['cache',          '.gem'],
     ['doc',            ''],
+    ['extensions',     ''],
     ['gems',           ''],
-  ]
+  ].freeze
 
-  raise 'Update REPOSITORY_EXTENSION_MAP' unless
-    Gem::REPOSITORY_SUBDIRECTORIES.sort ==
+  missing =
+    Gem::REPOSITORY_SUBDIRECTORIES.sort -
       REPOSITORY_EXTENSION_MAP.map { |(k,_)| k }.sort
+
+  raise "Update REPOSITORY_EXTENSION_MAP, missing: #{missing.join ', '}" unless
+    missing.empty?
 
   ##
   # Creates a new Gem::Doctor that will clean up +gem_repository+.  Only one
@@ -37,8 +41,8 @@ class Gem::Doctor
   #
   # If +dry_run+ is true no files or directories will be removed.
 
-  def initialize gem_repository, dry_run = false
-    @gem_repository = Pathname(gem_repository)
+  def initialize(gem_repository, dry_run = false)
+    @gem_repository = gem_repository
     @dry_run        = dry_run
 
     @installed_specs = nil
@@ -69,7 +73,7 @@ class Gem::Doctor
 
     Gem.use_paths @gem_repository.to_s
 
-    unless gem_repository? then
+    unless gem_repository?
       say 'This directory does not appear to be a RubyGems repository, ' +
           'skipping'
       say
@@ -95,31 +99,33 @@ class Gem::Doctor
   ##
   # Removes files in +sub_directory+ with +extension+
 
-  def doctor_child sub_directory, extension # :nodoc:
-    directory = @gem_repository + sub_directory
+  def doctor_child(sub_directory, extension) # :nodoc:
+    directory = File.join(@gem_repository, sub_directory)
 
-    directory.children.sort.each do |child|
-      next unless child.exist?
+    Dir.entries(directory).sort.each do |ent|
+      next if ent == "." || ent == ".."
 
-      basename = child.basename(extension).to_s
+      child = File.join(directory, ent)
+      next unless File.exist?(child)
+
+      basename = File.basename(child, extension)
       next if installed_specs.include? basename
       next if /^rubygems-\d/ =~ basename
       next if 'specifications' == sub_directory and 'default' == basename
 
-      type = child.directory? ? 'directory' : 'file'
+      type = File.directory?(child) ? 'directory' : 'file'
 
-      action = if @dry_run then
+      action = if @dry_run
                  'Extra'
                else
-                 child.rmtree
+                 FileUtils.rm_r(child)
                  'Removed'
                end
 
-      say "#{action} #{type} #{sub_directory}/#{child.basename}"
+      say "#{action} #{type} #{sub_directory}/#{File.basename(child)}"
     end
   rescue Errno::ENOENT
     # ignore
   end
 
 end
-

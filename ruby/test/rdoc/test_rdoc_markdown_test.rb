@@ -1,5 +1,5 @@
-require 'rubygems'
-require 'minitest/autorun'
+# frozen_string_literal: true
+require 'minitest_helper'
 require 'pp'
 
 require 'rdoc'
@@ -13,13 +13,6 @@ class TestRDocMarkdownTest < RDoc::TestCase
     super
 
     @parser = RDoc::Markdown.new
-  end
-
-  def mu_pp obj
-    s = ''
-    s = PP.pp obj, s
-    s.force_encoding Encoding.default_external if defined? Encoding
-    s.chomp
   end
 
   def test_amps_and_angle_encoding
@@ -608,7 +601,7 @@ foo
 
         para("Unordered (bulleted) lists use asterisks, pluses, and hyphens (<code>*</code>,\n" +
              "<code>+</code>, and <code>-</code>) as list markers. These three markers are\n" +
-             "interchangable; this:"),
+             "interchangeable; this:"),
 
         verb("*   Candy.\n",
              "*   Gum.\n",
@@ -1097,7 +1090,7 @@ foo
 
         para("Markdown supports ordered (numbered) and unordered (bulleted) lists."),
 
-        para("Unordered lists use asterisks, pluses, and hyphens -- interchangably\n" +
+        para("Unordered lists use asterisks, pluses, and hyphens -- interchangeably\n" +
              "-- as list markers:"),
 
         verb("*   Red\n",
@@ -1888,4 +1881,3 @@ foo
   end
 
 end
-

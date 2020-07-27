@@ -1,9 +1,10 @@
-require "rexml/parent"
-require "rexml/namespace"
-require "rexml/attribute"
-require "rexml/cdata"
-require "rexml/xpath"
-require "rexml/parseexception"
+# frozen_string_literal: false
+require_relative "parent"
+require_relative "namespace"
+require_relative "attribute"
+require_relative "cdata"
+require_relative "xpath"
+require_relative "parseexception"
 
 module REXML
   # An implementation note about namespaces:
@@ -206,7 +207,7 @@ module REXML
       return namespaces
     end
 
-    # Evalutas to the URI for a prefix, or the empty string if no such
+    # Evaluates to the URI for a prefix, or the empty string if no such
     # namespace is declared for this element. Evaluates recursively for
     # ancestors.  Returns the default namespace, if there is one.
     # prefix::
@@ -550,6 +551,30 @@ module REXML
     # Attributes                                    #
     #################################################
 
+    # Fetches an attribute value or a child.
+    #
+    # If String or Symbol is specified, it's treated as attribute
+    # name. Attribute value as String or +nil+ is returned. This case
+    # is shortcut of +attributes[name]+.
+    #
+    # If Integer is specified, it's treated as the index of
+    # child. It returns Nth child.
+    #
+    #   doc = REXML::Document.new("<a attr='1'><b/><c/></a>")
+    #   doc.root["attr"]             # => "1"
+    #   doc.root.attributes["attr"]  # => "1"
+    #   doc.root[1]                  # => <c/>
+    def [](name_or_index)
+      case name_or_index
+      when String
+        attributes[name_or_index]
+      when Symbol
+        attributes[name_or_index.to_s]
+      else
+        super
+      end
+    end
+
     def attribute( name, namespace=nil )
       prefix = nil
       if namespaces.respond_to? :key
@@ -678,20 +703,17 @@ module REXML
     #   pretty-printed in such a way that the added whitespace does not affect
     #   the parse tree of the document
     # ie_hack::
-    #   Internet Explorer is the worst piece of crap to have ever been
-    #   written, with the possible exception of Windows itself.  Since IE is
-    #   unable to parse proper XML, we have to provide a hack to generate XML
-    #   that IE's limited abilities can handle.  This hack inserts a space
-    #   before the /> on empty tags.  Defaults to false
+    #   This hack inserts a space before the /> on empty tags to address
+    #   a limitation of Internet Explorer.  Defaults to false
     #
     #  out = ''
     #  doc.write( out )     #-> doc is written to the string 'out'
     #  doc.write( $stdout ) #-> doc written to the console
     def write(output=$stdout, indent=-1, transitive=false, ie_hack=false)
-      Kernel.warn("#{self.class.name}.write is deprecated.  See REXML::Formatters")
+      Kernel.warn("#{self.class.name}.write is deprecated.  See REXML::Formatters", uplevel: 1)
       formatter = if indent > -1
           if transitive
-            require "rexml/formatters/transitive"
+            require_relative "formatters/transitive"
             REXML::Formatters::Transitive.new( indent, ie_hack )
           else
             REXML::Formatters::Pretty.new( indent, ie_hack )
@@ -990,7 +1012,7 @@ module REXML
     end
 
     def to_a
-      values.flatten
+      enum_for(:each_attribute).to_a
     end
 
     # Returns the number of attributes the owning Element contains.
@@ -1011,6 +1033,7 @@ module REXML
     #    p attr.expanded_name+" => "+attr.value
     #  }
     def each_attribute # :yields: attribute
+      return to_enum(__method__) unless block_given?
       each_value do |val|
         if val.kind_of? Attribute
           yield val
@@ -1026,6 +1049,7 @@ module REXML
     #  doc = Document.new '<a x="1" y="2"/>'
     #  doc.root.attributes.each {|name, value| p name+" => "+value }
     def each
+      return to_enum(__method__) unless block_given?
       each_attribute do |attr|
         yield [attr.expanded_name, attr.value]
       end
@@ -1184,9 +1208,8 @@ module REXML
         prefix = '' unless prefix
       end
       old = fetch(name, nil)
-      attr = nil
       if old.kind_of? Hash # the supplied attribute is one of many
-        attr = old.delete(prefix)
+        old.delete(prefix)
         if old.size == 1
           repl = nil
           old.each_value{|v| repl = v}
@@ -1195,7 +1218,6 @@ module REXML
       elsif old.nil?
         return @element
       else # the supplied attribute is a top-level one
-        attr = old
         super(name)
       end
       @element

@@ -2,14 +2,17 @@
 
   util.c -
 
-  $Author: nagachika $
+  $Author: shyouhei $
   created at: Fri Mar 10 17:22:34 JST 1995
 
   Copyright (C) 1993-2008 Yukihiro Matsumoto
 
 **********************************************************************/
 
-#include "ruby/ruby.h"
+#if defined __MINGW32__ || defined __MINGW64__
+#define MINGW_HAS_SECURE_API 1
+#endif
+
 #include "internal.h"
 
 #include <ctype.h>
@@ -24,13 +27,20 @@
 
 #include "ruby/util.h"
 
+const char ruby_hexdigits[] = "0123456789abcdef0123456789ABCDEF";
+#define hexdigit ruby_hexdigits
+
 unsigned long
 ruby_scan_oct(const char *start, size_t len, size_t *retlen)
 {
     register const char *s = start;
     register unsigned long retval = 0;
+    size_t i;
 
-    while (len-- && *s >= '0' && *s <= '7') {
+    for (i = 0; i < len; i++) {
+        if ((s[0] < '0') || ('7' < s[0])) {
+            break;
+        }
 	retval <<= 3;
 	retval |= *s++ - '0';
     }
@@ -41,12 +51,19 @@ ruby_scan_oct(const char *start, size_t len, size_t *retlen)
 unsigned long
 ruby_scan_hex(const char *start, size_t len, size_t *retlen)
 {
-    static const char hexdigit[] = "0123456789abcdef0123456789ABCDEF";
     register const char *s = start;
     register unsigned long retval = 0;
     const char *tmp;
+    size_t i = 0;
 
-    while (len-- && *s && (tmp = strchr(hexdigit, *s))) {
+    for (i = 0; i < len; i++) {
+        if (! s[0]) {
+            break;
+        }
+        tmp = strchr(hexdigit, *s);
+        if (! tmp) {
+            break;
+        }
 	retval <<= 4;
 	retval |= (tmp - hexdigit) & 15;
 	s++;
@@ -55,40 +72,47 @@ ruby_scan_hex(const char *start, size_t len, size_t *retlen)
     return retval;
 }
 
-static unsigned long
-scan_digits(const char *str, int base, size_t *retlen, int *overflow)
+const signed char ruby_digit36_to_number_table[] = {
+    /*     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
+    /*0*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*1*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*2*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*3*/  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,-1,-1,-1,-1,-1,-1,
+    /*4*/ -1,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,
+    /*5*/ 25,26,27,28,29,30,31,32,33,34,35,-1,-1,-1,-1,-1,
+    /*6*/ -1,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,
+    /*7*/ 25,26,27,28,29,30,31,32,33,34,35,-1,-1,-1,-1,-1,
+    /*8*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*9*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*a*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*b*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*c*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*d*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*e*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    /*f*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+};
+
+NO_SANITIZE("unsigned-integer-overflow", extern unsigned long ruby_scan_digits(const char *str, ssize_t len, int base, size_t *retlen, int *overflow));
+unsigned long
+ruby_scan_digits(const char *str, ssize_t len, int base, size_t *retlen, int *overflow)
 {
-    static signed char table[] = {
-        /*     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
-        /*0*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*1*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*2*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*3*/  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,-1,-1,-1,-1,-1,-1,
-        /*4*/ -1,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,
-        /*5*/ 25,26,27,28,29,30,31,32,33,34,35,-1,-1,-1,-1,-1,
-        /*6*/ -1,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,
-        /*7*/ 25,26,27,28,29,30,31,32,33,34,35,-1,-1,-1,-1,-1,
-        /*8*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*9*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*a*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*b*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*c*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*d*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*e*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        /*f*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    };
 
     const char *start = str;
     unsigned long ret = 0, x;
     unsigned long mul_overflow = (~(unsigned long)0) / base;
-    int c;
+
     *overflow = 0;
 
-    while ((c = (unsigned char)*str++) != '\0') {
-        int d = table[c];
+    if (!len) {
+	*retlen = 0;
+	return 0;
+    }
+
+    do {
+	int d = ruby_digit36_to_number_table[(unsigned char)*str++];
         if (d == -1 || base <= d) {
-            *retlen = (str-1) - start;
-            return ret;
+	    --str;
+	    break;
         }
         if (mul_overflow < ret)
             *overflow = 1;
@@ -97,8 +121,8 @@ scan_digits(const char *str, int base, size_t *retlen, int *overflow)
         ret += d;
         if (ret < x)
             *overflow = 1;
-    }
-    *retlen = (str-1) - start;
+    } while (len < 0 || --len);
+    *retlen = str - start;
     return ret;
 }
 
@@ -149,7 +173,7 @@ ruby_strtoul(const char *str, char **endptr, int base)
         b = base == 0 ? 10 : base;
     }
 
-    ret = scan_digits(str, b, &len, &overflow);
+    ret = ruby_scan_digits(str, -1, b, &len, &overflow);
 
     if (0 < len)
         subject_found = str+len;
@@ -184,7 +208,54 @@ ruby_strtoul(const char *str, char **endptr, int base)
 #   define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif
 
+typedef int (cmpfunc_t)(const void*, const void*, void*);
 
+#if defined HAVE_QSORT_S && defined RUBY_MSVCRT_VERSION
+/* In contrast to its name, Visual Studio qsort_s is incompatible with
+ * C11 in the order of the comparison function's arguments, and same
+ * as BSD qsort_r rather. */
+# define qsort_r(base, nel, size, arg, cmp) qsort_s(base, nel, size, cmp, arg)
+# define cmp_bsd_qsort cmp_ms_qsort
+# define HAVE_BSD_QSORT_R 1
+#endif
+
+#if defined HAVE_BSD_QSORT_R
+struct bsd_qsort_r_args {
+    cmpfunc_t *cmp;
+    void *arg;
+};
+
+static int
+cmp_bsd_qsort(void *d, const void *a, const void *b)
+{
+    const struct bsd_qsort_r_args *args = d;
+    return (*args->cmp)(a, b, args->arg);
+}
+
+void
+ruby_qsort(void* base, const size_t nel, const size_t size, cmpfunc_t *cmp, void *d)
+{
+    struct bsd_qsort_r_args args;
+    args.cmp = cmp;
+    args.arg = d;
+    qsort_r(base, nel, size, &args, cmp_bsd_qsort);
+}
+#elif defined HAVE_QSORT_S
+/* C11 qsort_s has the same arguments as GNU's, but uses
+ * runtime-constraints handler. */
+void
+ruby_qsort(void* base, const size_t nel, const size_t size, cmpfunc_t *cmp, void *d)
+{
+    if (!nel || !size) return;  /* nothing to sort */
+
+    /* get rid of runtime-constraints handler for MT-safeness */
+    if (!base || !cmp) return;
+    if (nel > RSIZE_MAX || size > RSIZE_MAX) return;
+
+    qsort_s(base, nel, size, cmp, d);
+}
+# define HAVE_GNU_QSORT_R 1
+#elif !defined HAVE_GNU_QSORT_R
 /* mm.c */
 
 #define mmtype long
@@ -300,7 +371,6 @@ typedef struct { char *LL, *RR; } stack_node; /* Stack structure for L,l,R,r */
                        ((*cmp)((b),(c),d)<0 ? (b) : ((*cmp)((a),(c),d)<0 ? (c) : (a))) : \
                        ((*cmp)((b),(c),d)>0 ? (b) : ((*cmp)((a),(c),d)<0 ? (a) : (c))))
 
-typedef int (cmpfunc_t)(const void*, const void*, void*);
 void
 ruby_qsort(void* base, const size_t nel, const size_t size, cmpfunc_t *cmp, void *d)
 {
@@ -451,6 +521,7 @@ ruby_qsort(void* base, const size_t nel, const size_t size, cmpfunc_t *cmp, void
     else goto nxt;                         /* need not to sort both sides */
   }
 }
+#endif /* HAVE_GNU_QSORT_R */
 
 char *
 ruby_strdup(const char *str)
@@ -464,30 +535,37 @@ ruby_strdup(const char *str)
     return tmp;
 }
 
-#ifdef __native_client__
 char *
 ruby_getcwd(void)
 {
-    char *buf = xmalloc(2);
-    strcpy(buf, ".");
-    return buf;
-}
-#else
-char *
-ruby_getcwd(void)
-{
-#ifdef HAVE_GETCWD
+#if defined HAVE_GETCWD
+# undef RUBY_UNTYPED_DATA_WARNING
+# define RUBY_UNTYPED_DATA_WARNING 0
+# if defined NO_GETCWD_MALLOC
+    VALUE guard = Data_Wrap_Struct((VALUE)0, NULL, RUBY_DEFAULT_FREE, NULL);
     int size = 200;
     char *buf = xmalloc(size);
 
     while (!getcwd(buf, size)) {
-	if (errno != ERANGE) {
+	int e = errno;
+	if (e != ERANGE) {
 	    xfree(buf);
-	    rb_sys_fail("getcwd");
+	    DATA_PTR(guard) = NULL;
+	    rb_syserr_fail(e, "getcwd");
 	}
 	size *= 2;
+	DATA_PTR(guard) = buf;
 	buf = xrealloc(buf, size);
     }
+# else
+    VALUE guard = Data_Wrap_Struct((VALUE)0, NULL, free, NULL);
+    char *buf, *cwd = getcwd(NULL, 0);
+    DATA_PTR(guard) = cwd;
+    if (!cwd) rb_sys_fail("getcwd");
+    buf = ruby_strdup(cwd);	/* allocate by xmalloc */
+    free(cwd);
+# endif
+    DATA_PTR(RB_GC_GUARD(guard)) = NULL;
 #else
 # ifndef PATH_MAX
 #  define PATH_MAX 8192
@@ -495,13 +573,13 @@ ruby_getcwd(void)
     char *buf = xmalloc(PATH_MAX+1);
 
     if (!getwd(buf)) {
+	int e = errno;
 	xfree(buf);
-	rb_sys_fail("getwd");
+	rb_syserr_fail(e, "getwd");
     }
 #endif
     return buf;
 }
-#endif
 
 /****************************************************************
  *
@@ -698,6 +776,8 @@ ruby_getcwd(void)
 
 #if HAVE_LONG_LONG
 #define Llong LONG_LONG
+#else
+#define NO_LONG_LONG
 #endif
 
 #ifdef DEBUG
@@ -715,12 +795,12 @@ ruby_getcwd(void)
 #ifdef MALLOC
 extern void *MALLOC(size_t);
 #else
-#define MALLOC malloc
+#define MALLOC xmalloc
 #endif
 #ifdef FREE
 extern void FREE(void*);
 #else
-#define FREE free
+#define FREE xfree
 #endif
 
 #ifndef Omit_Private_Memory
@@ -1275,7 +1355,7 @@ mult(Bigint *a, Bigint *b)
 #else
 #ifdef Pack_32
     for (; xb < xbe; xb++, xc0++) {
-        if (y = *xb & 0xffff) {
+        if ((y = *xb & 0xffff) != 0) {
             x = xa;
             xc = xc0;
             carry = 0;
@@ -1288,7 +1368,7 @@ mult(Bigint *a, Bigint *b)
             } while (x < xae);
             *xc = (ULong)carry;
         }
-        if (y = *xb >> 16) {
+        if ((y = *xb >> 16) != 0) {
             x = xa;
             xc = xc0;
             carry = 0;
@@ -1461,6 +1541,7 @@ cmp(Bigint *a, Bigint *b)
     return 0;
 }
 
+NO_SANITIZE("unsigned-integer-overflow", static Bigint * diff(Bigint *a, Bigint *b));
 static Bigint *
 diff(Bigint *a, Bigint *b)
 {
@@ -1940,6 +2021,7 @@ hexnan(double *rvp, const char **sp)
 #endif /*No_Hex_NaN*/
 #endif /* INFNAN_CHECK */
 
+NO_SANITIZE("unsigned-integer-overflow", double ruby_strtod(const char *s00, char **se));
 double
 ruby_strtod(const char *s00, char **se)
 {
@@ -1991,7 +2073,6 @@ ruby_strtod(const char *s00, char **se)
 break2:
     if (*s == '0') {
 	if (s[1] == 'x' || s[1] == 'X') {
-	    static const char hexdigit[] = "0123456789abcdef0123456789ABCDEF";
 	    s0 = ++s;
 	    adj = 0;
 	    aadj = 1.0;
@@ -2068,7 +2149,7 @@ break2:
     for (nd = nf = 0; (c = *s) >= '0' && c <= '9'; nd++, s++)
         if (nd < 9)
             y = 10*y + c - '0';
-        else if (nd < 16)
+        else if (nd < DBL_DIG + 2)
             z = 10*z + c - '0';
     nd0 = nd;
 #ifdef USE_LOCALE
@@ -2108,17 +2189,19 @@ break2:
         for (; c >= '0' && c <= '9'; c = *++s) {
 have_dig:
             nz++;
-            if (nf > DBL_DIG * 4) continue;
+            if (nd > DBL_DIG * 4) {
+		continue;
+	    }
             if (c -= '0') {
                 nf += nz;
                 for (i = 1; i < nz; i++)
                     if (nd++ < 9)
                         y *= 10;
-                    else if (nd <= DBL_DIG + 1)
+                    else if (nd <= DBL_DIG + 2)
                         z *= 10;
                 if (nd++ < 9)
                     y = 10*y + c;
-                else if (nd <= DBL_DIG + 1)
+                else if (nd <= DBL_DIG + 2)
                     z = 10*z + c;
                 nz = 0;
             }
@@ -2206,7 +2289,7 @@ ret0:
 
     if (!nd0)
         nd0 = nd;
-    k = nd < DBL_DIG + 1 ? nd : DBL_DIG + 1;
+    k = nd < DBL_DIG + 2 ? nd : DBL_DIG + 2;
     dval(rv) = y;
     if (k > 9) {
 #ifdef SET_INEXACT
@@ -2898,6 +2981,7 @@ ret:
     return sign ? -dval(rv) : dval(rv);
 }
 
+NO_SANITIZE("unsigned-integer-overflow", static int quorem(Bigint *b, Bigint *S));
 static int
 quorem(Bigint *b, Bigint *S)
 {
@@ -3128,7 +3212,7 @@ ruby_dtoa(double d_, int mode, int ndigits, int *decpt, int *sign, char **rve)
 
     int bbits, b2, b5, be, dig, i, ieps, ilim, ilim0, ilim1,
         j, j1, k, k0, k_check, leftright, m2, m5, s2, s5,
-        spec_case, try_quick;
+        spec_case, try_quick, half = 0;
     Long L;
 #ifndef Sudden_Underflow
     int denorm;
@@ -3421,6 +3505,10 @@ ruby_dtoa(double d_, int mode, int ndigits, int *decpt, int *sign, char **rve)
                         while (*--s == '0') ;
                         s++;
                         goto ret1;
+                    }
+                    half = 1;
+                    if ((*(s-1) - '0') & 1) {
+                        goto bump_up;
                     }
                     break;
                 }
@@ -3729,12 +3817,13 @@ keep_dig:
                 *s++ = '1';
                 goto ret;
             }
-        ++*s++;
+        if (!half || (*s - '0') & 1)
+            ++*s;
     }
     else {
         while (*--s == '0') ;
-        s++;
     }
+    s++;
 ret:
     Bfree(S);
     if (mhi) {
@@ -3890,13 +3979,10 @@ ruby_hdtoa(double d, const char *xdigs, int ndigits, int *decpt, int *sign,
 	/* Round to the desired number of digits. */
 	if (SIGFIGS > ndigits && ndigits > 0) {
 		float redux = 1.0f;
-		volatile double d;
 		int offset = 4 * ndigits + DBL_MAX_EXP - 4 - DBL_MANT_DIG;
 		dexp_set(u, offset);
-		d = u.d;
-		d += redux;
-		d -= redux;
-		u.d = d;
+		u.d += redux;
+		u.d -= redux;
 		*decpt += dexp_get(u) - offset;
 	}
 

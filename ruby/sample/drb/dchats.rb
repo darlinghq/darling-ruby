@@ -2,7 +2,6 @@
  distributed Ruby --- chat server
  	Copyright (c) 1999-2000 Masatoshi SEKI
 =end
-require 'thread'
 require 'drb/drb'
 
 class ChatEntry
@@ -47,16 +46,16 @@ class ChatServer
     msg2 = ">#{name}< #{str}"
     @mutex.synchronize do
       for m in @members.keys
-	begin
-	  if m == there
-	    @members[m].listen(msg2)
-	   else
-	    @members[m].listen(msg)
-	  end
-	rescue
-	  p $!
-	  @members.delete(m)
-	end
+        begin
+          if m == there
+            @members[m].listen(msg2)
+           else
+            @members[m].listen(msg)
+          end
+        rescue
+          p $!
+          @members.delete(m)
+        end
       end
     end
   end

@@ -3,9 +3,10 @@
 exec "${RUBY-ruby}" "-x" "$0" "$@" && [ ] if false
 #!ruby
 # This needs ruby 1.9 and subversion.
-# run this in a repository to commit.
+# As a Ruby committer, run this in an SVN repository
+# to commit a change.
 
-require 'date'
+require 'fileutils'
 require 'tempfile'
 
 $repos = 'svn+ssh://svn@ci.ruby-lang.org/ruby/'
@@ -13,34 +14,45 @@ ENV['LC_ALL'] = 'C'
 
 def help
   puts <<-end
-simple backport
+\e[1msimple backport\e[0m
   ruby #$0 1234
 
-range backport
+\e[1mrange backport\e[0m
   ruby #$0 1234:5678
 
-backport from other branch
+\e[1mbackport from other branch\e[0m
   ruby #$0 17502 mvm
 
-revision increment
+\e[1mrevision increment\e[0m
   ruby #$0 revisionup
 
-tagging patch release
+\e[1mteeny increment\e[0m
+  ruby #$0 teenyup
+
+\e[1mtagging major release\e[0m
+  ruby #$0 tag 2.2.0
+
+\e[1mtagging patch release\e[0m (about 2.1.0 or later, it means X.Y.Z (Z > 0) release)
   ruby #$0 tag
 
-tagging preview/RC
-  ruby #$0 tag 2.0.0-preview1
+\e[1mtagging preview/RC\e[0m
+  ruby #$0 tag 2.2.0-preview1
 
-* all operations shall be applied to the working directory.
+\e[1mremove tag\e[0m
+  ruby #$0 removetag 2.2.9
+
+\e[33;1m* all operations shall be applied to the working directory.\e[0m
 end
 end
+
+# Prints the version of Ruby found in version.h
 
 def version
   v = p = nil
   open 'version.h', 'rb' do |f|
     f.each_line do |l|
       case l
-      when /^#define RUBY_VERSION "(\d)\.(\d)\.(\d)"$/
+      when /^#define RUBY_VERSION "(\d+)\.(\d+)\.(\d+)"$/
         v = $~.captures
       when /^#define RUBY_PATCHLEVEL (-?\d+)$/
         p = $1
@@ -53,7 +65,7 @@ end
 def interactive str, editfile = nil
   loop do
     yield
-    STDERR.puts "#{str} ([y]es|[a]bort|[r]etry#{'|[e]dit' if editfile})"
+    STDERR.puts "\e[1;33m#{str} ([y]es|[a]bort|[r]etry#{'|[e]dit' if editfile})\e[0m"
     case STDIN.gets
     when /\Aa/i then exit
     when /\Ar/i then redo
@@ -64,21 +76,18 @@ def interactive str, editfile = nil
   end
 end
 
-def version_up
-  d = DateTime.now
-  d = d.new_offset(Rational(9,24)) # we need server locale (i.e. japanese) time
+def version_up(inc=nil)
+  d = Time.now
+  d = d.localtime(9*60*60) # server is Japan Standard Time +09:00
   system(*%w'svn revert version.h')
-  v, p = version
+  v, pl = version
 
-  teeny = v[2]
-  case v
-  when %w/1 9 2/
-    teeny = 1
+  if inc == :teeny
+    v[2].succ!
   end
-
-  p = p.to_i
-  if p != -1
-    p += 1
+  # patchlevel
+  if pl != "-1"
+    pl.succ!
   end
 
   str = open 'version.h', 'rb' do |f| f.read end
@@ -86,10 +95,10 @@ def version_up
    %W[RUBY_VERSION_CODE  #{v.join ''}],
    %W[RUBY_VERSION_MAJOR #{v[0]}],
    %W[RUBY_VERSION_MINOR #{v[1]}],
-   %W[RUBY_VERSION_TEENY #{teeny}],
+   %W[RUBY_VERSION_TEENY #{v[2]}],
    %W[RUBY_RELEASE_DATE "#{d.strftime '%Y-%m-%d'}"],
    %W[RUBY_RELEASE_CODE  #{d.strftime '%Y%m%d'}],
-   %W[RUBY_PATCHLEVEL    #{p}],
+   %W[RUBY_PATCHLEVEL    #{pl}],
    %W[RUBY_RELEASE_YEAR  #{d.year}],
    %W[RUBY_RELEASE_MONTH #{d.month}],
    %W[RUBY_RELEASE_DAY   #{d.day}],
@@ -107,33 +116,72 @@ end
 
 def tag intv_p = false, relname=nil
   # relname:
-  #   * 2.0.0-preview1
-  #   * 2.0.0-rc1
-  #   * 2.0.0-p0
-  #   * 2.0.0-p100
+  #   * 2.2.0-preview1
+  #   * 2.2.0-rc1
+  #   * 2.2.0
   v, pl = version
   x = v.join('_')
   if relname
-    abort "patch level is not -1 but '#{pl}' even if this is new release" if pl != '-1'
+    abort "patchlevel is not -1 but '#{pl}' for preview or rc" if pl != '-1' && /-(?:preview|rc)/ =~ relname
+    abort "patchlevel is not 0 but '#{pl}' for the first release" if pl != '0' && /-(?:preview|rc)/ !~ relname
     pl = relname[/-(.*)\z/, 1]
-    curver = v.join('.') + '-' + pl
+    curver = v.join('.') + (pl ? '-' + pl : '')
     if relname != curver
-      abort "geiven relname '#{relname}' conflicts current version '#{curver}'"
+      abort "given relname '#{relname}' conflicts current version '#{curver}'"
     end
     branch_url = `svn info`[/URL: (.*)/, 1]
   else
     if pl == '-1'
       abort "no relname is given and not in a release branch even if this is patch release"
     end
-    branch_url = $repos + 'branches/ruby_' + x
+    branch_url = $repos + 'branches/ruby_'
+    if v[0] < "2" || (v[0] == "2" && v[1] < "1")
+      abort "patchlevel must be greater than 0 for patch release" if pl == "0"
+      branch_url << x
+    else
+      abort "teeny must be greater than 0 for patch release" if v[2] == "0"
+      branch_url << x.sub(/_\d+$/, '')
+    end
   end
-  tagname = 'v' + x + '_' + pl
+  tagname = 'v' + x + (v[0] < "2" || (v[0] == "2" && v[1] < "1") || /^(?:preview|rc)/ =~ pl ? '_' + pl : '')
   tag_url = $repos + 'tags/' + tagname
+  system(*%w'svn info', tag_url, out: IO::NULL, err: IO::NULL)
+  if $?.success?
+    abort "specfied tag already exists. check tag name and remove it if you want to force re-tagging"
+  end
   if intv_p
     interactive "OK? svn cp -m \"add tag #{tagname}\" #{branch_url} #{tag_url}" do
+      # nothing to do here
     end
   end
   system(*%w'svn cp -m', "add tag #{tagname}", branch_url, tag_url)
+end
+
+def remove_tag intv_p = false, relname
+  # relname:
+  #   * 2.2.0-preview1
+  #   * 2.2.0-rc1
+  #   * 2.2.0
+  #   * v2_2_0_preview1
+  #   * v2_2_0_rc1
+  #   * v2_2_0
+  if !relname && !intv_p.is_a?(String)
+    raise ArgumentError, "relname is not specified"
+  end
+  intv_p, relname = false, intv_p if !relname && intv_p.is_a?(String)
+
+  if /^v/ !~ relname
+    tagname = 'v' + relname.tr(".-", "_")
+  else
+    tagname = relname
+  end
+  tag_url = $repos + 'tags/' + tagname
+  if intv_p
+    interactive "OK? svn rm -m \"remove tag #{tagname}\" #{tag_url}" do
+      # nothing to do here
+    end
+  end
+  system(*%w'svn rm -m', "remove tag #{tagname}", tag_url)
 end
 
 def default_merge_branch
@@ -141,37 +189,56 @@ def default_merge_branch
 end
 
 case ARGV[0]
+when "teenyup"
+  version_up(:teeny)
+  system 'svn diff version.h'
 when "up", /\A(ver|version|rev|revision|lv|level|patch\s*level)\s*up/
   version_up
   system 'svn diff version.h'
 when "tag"
   tag :interactive, ARGV[1]
+when /\A(?:remove|rm|del)_?tag\z/
+  remove_tag :interactive, ARGV[1]
 when nil, "-h", "--help"
   help
   exit
 else
   system 'svn up'
+  system 'ruby tool/file2lastrev.rb --revision.h . > revision.tmp'
+  system 'tool/ifchange "--timestamp=.revision.time" "revision.h" "revision.tmp"'
+  FileUtils.rm_f('revision.tmp')
 
-  if /--ticket=(.*)/ =~ ARGV[0]
-    tickets = $1.split(/,/).map{|num| " [Backport ##{num}]"}
+  case ARGV[0]
+  when /--ticket=(.*)/
+    tickets = $1.split(/,/).map{|num| " [Backport ##{num}]"}.join
     ARGV.shift
+  when /merge revision\(s\) ([\d,\-]+):( \[.*)/
+    tickets = $2
+    ARGV[0] = $1
   else
-    tickets = []
+    tickets = ''
   end
 
   q = $repos + (ARGV[1] || default_merge_branch)
-  revs = ARGV[0].split(/,\s*/)
+  revstr = ARGV[0].delete('^, :\-0-9')
+  revs = revstr.split(/[,\s]+/)
   log = ''
   log_svn = ''
 
   revs.each do |rev|
     case rev
-    when /\Ar?\d+:r?\d+\z/
+    when /\A\d+:\d+\z/
       r = ['-r', rev]
-    when /\Ar?\d+\z/
+    when /\A(\d+)-(\d+)\z/
+      rev = "#{$1.to_i-1}:#$2"
+      r = ['-r', rev]
+    when /\A\d+\z/
       r = ['-c', rev]
     when nil then
       puts "#$0 revision"
+      exit
+    else
+      puts "invalid revision part '#{rev}' in '#{ARGV[0]}'"
       exit
     end
 
@@ -180,13 +247,14 @@ else
     end
 
     log << l
-    log_svn << l.lines.grep(/^\+\t/).join.gsub(/^\+/, '').gsub(/^\t\*/, "\n\t\*")
+    l = l.lines.grep(/^\+\t/).join.gsub(/^\+/, '').gsub(/^\t\*/, "\n\t\*")
 
-    if log_svn.empty?
-      log_svn = IO.popen %w'svn log ' + r + [q] do |f|
+    if l.empty?
+      l = IO.popen %w'svn log ' + r + [q] do |f|
         f.read
-      end.sub(/\A-+\nr.*\n/, '').sub(/\n-+\n\z/, '').gsub(/^(?=\S)/, "\t")
+      end.sub(/\A-+\nr.*/, '').sub(/\n-+\n\z/, '').gsub(/^./, "\t\\&")
     end
+    log_svn << l
 
     a = %w'svn merge --accept=postpone' + r + [q]
     STDERR.puts a.join(' ')
@@ -214,7 +282,7 @@ else
 
   version_up
   f = Tempfile.new 'merger.rb'
-  f.printf "merge revision(s) %s:%s\n", ARGV[0], tickets.join
+  f.printf "merge revision(s) %s:%s", revstr, tickets
   f.write log_svn
   f.flush
   f.close
@@ -238,5 +306,5 @@ else
     puts 'commit failed; try again.'
   end
 
-  f.close
+  f.close(true)
 end

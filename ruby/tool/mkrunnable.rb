@@ -1,6 +1,10 @@
 #!./miniruby
 # -*- coding: us-ascii -*-
 
+# Used by "make runnable" target, to make symbolic links from a build
+# directory.
+
+require './rbconfig'
 require 'fileutils'
 
 case ARGV[0]
@@ -14,19 +18,11 @@ else
   include FileUtils
 end
 
-def relative_from(path, base)
-  dir = File.join(path, "")
-  if File.expand_path(dir) == File.expand_path(dir, base)
-    path
-  else
-    File.join(base, path)
-  end
-end
-
 module Mswin
   def ln_safe(src, dest, *opt)
     cmd = ["mklink", dest.tr("/", "\\"), src.tr("/", "\\")]
     cmd[1, 0] = opt
+    return if system("cmd", "/c", *cmd)
     # TODO: use RUNAS or something
     puts cmd.join(" ")
   end
@@ -36,28 +32,78 @@ module Mswin
   end
 end
 
+def clean_link(src, dest)
+  begin
+    link = File.readlink(dest)
+  rescue
+  else
+    return if link == src
+    File.unlink(dest)
+  end
+  yield src, dest
+end
+
 def ln_safe(src, dest)
-  link = File.readlink(dest) rescue nil
-  return if link == src
   ln_sf(src, dest)
 end
 
 alias ln_dir_safe ln_safe
 
-if /mingw|mswin/ =~ CROSS_COMPILING
+if !File.respond_to?(:symlink) && /mingw|mswin/ =~ (CROSS_COMPILING || RUBY_PLATFORM)
   extend Mswin
 end
 
-config = RbConfig::CONFIG
+def clean_path(path)
+  path = "#{path}/".gsub(/(\A|\/)(?:\.\/)+/, '\1').tr_s('/', '/')
+  nil while path.sub!(/[^\/]+\/\.\.\//, '')
+  path
+end
+
+def relative_path_from(path, base)
+  path = clean_path(path)
+  base = clean_path(base)
+  path, base = [path, base].map{|s|s.split("/")}
+  until path.empty? or base.empty? or path[0] != base[0]
+      path.shift
+      base.shift
+  end
+  path, base = [path, base].map{|s|s.join("/")}
+  if /(\A|\/)\.\.\// =~ base
+    File.expand_path(path)
+  else
+    base.gsub!(/[^\/]+/, '..')
+    File.join(base, path)
+  end
+end
+
+def ln_relative(src, dest)
+  return if File.identical?(src, dest)
+  parent = File.dirname(dest)
+  File.directory?(parent) or mkdir_p(parent)
+  clean_link(relative_path_from(src, parent), dest) {|s, d| ln_safe(s, d)}
+end
+
+def ln_dir_relative(src, dest)
+  return if File.identical?(src, dest)
+  parent = File.dirname(dest)
+  File.directory?(parent) or mkdir_p(parent)
+  clean_link(relative_path_from(src, parent), dest) {|s, d| ln_dir_safe(s, d)}
+end
+
+config = RbConfig::MAKEFILE_CONFIG.merge("prefix" => ".", "exec_prefix" => ".")
+config.each_value {|s| RbConfig.expand(s, config)}
 srcdir = config["srcdir"] ||= File.dirname(__FILE__)
 top_srcdir = config["top_srcdir"] ||= File.dirname(srcdir)
 extout = ARGV[0] || config["EXTOUT"]
-version = config["ruby_version"]
 arch = config["arch"]
-bindir = File.basename(config["bindir"])
-libdir = File.basename(config["libdir"])
-archdir = File.join(extout, arch)
-[bindir, libdir, archdir].each do |dir|
+bindir = config["bindir"]
+libdirname = config["libdirname"]
+libdir = config[libdirname || "libdir"]
+vendordir = config["vendordir"]
+rubylibdir = config["rubylibdir"]
+rubyarchdir = config["rubyarchdir"]
+archdir = "#{extout}/#{arch}"
+[bindir, libdir, archdir].uniq.each do |dir|
   File.directory?(dir) or mkdir_p(dir)
 end
 
@@ -67,30 +113,23 @@ rubyw_install_name = config["rubyw_install_name"]
 goruby_install_name = "go" + ruby_install_name
 [ruby_install_name, rubyw_install_name, goruby_install_name].map do |ruby|
   ruby += exeext
-  if ruby and !ruby.empty?
-    ln_safe("../#{ruby}", "#{bindir}/#{ruby}")
+  if ruby and !ruby.empty? and !File.file?(target = "#{bindir}/#{ruby}")
+    ln_relative(ruby, target)
   end
 end
-libruby = config.values_at("LIBRUBY_A", "LIBRUBY_SO")
+so = config["LIBRUBY_SO"]
+libruby = [config["LIBRUBY_A"]]
+if /\.dll\z/i =~ so
+  ln_relative(so, "#{bindir}/#{so}")
+else
+  libruby << so
+end
 libruby.concat(config["LIBRUBY_ALIASES"].split)
-libruby.each {|lib|ln_safe("../#{lib}", "#{libdir}/#{lib}")}
-if File.expand_path(extout) == extout
-  ln_dir_safe(extout, "#{libdir}/ruby")
-else
-  ln_dir_safe(File.join("..", extout), "#{libdir}/ruby")
-  cur = "#{extout}/".gsub(/(\A|\/)(?:\.\/)+/, '\1').tr_s('/', '/')
-  nil while cur.sub!(/[^\/]+\/\.\.\//, '')
-  if /(\A|\/)\.\.\// =~ cur
-    cur = nil
-  else
-    cur.gsub!(/[^\/]+/, '..')
-  end
-end
-if cur
-  ln_safe(File.join("..", cur, "rbconfig.rb"), File.join(archdir, "rbconfig.rb"))
-else
-  ln_safe(File.expand_path("rbconfig.rb"), File.join(archdir, "rbconfig.rb"))
-end
-ln_dir_safe("common", File.join(extout, version))
-ln_dir_safe(File.join("..", arch), File.join(extout, "common", arch))
-ln_dir_safe(relative_from(File.join(top_srcdir, "lib"), ".."), File.join(extout, "vendor_ruby"))
+libruby.each {|lib|ln_relative(lib, "#{libdir}/#{lib}")}
+ln_dir_relative("#{extout}/common", rubylibdir)
+rubyarchdir.sub!(rubylibdir, "#{extout}/common")
+vendordir.sub!(rubylibdir, "#{extout}/common")
+ln_dir_relative(archdir, rubyarchdir)
+vendordir.sub!(rubyarchdir, archdir)
+ln_dir_relative("#{top_srcdir}/lib", vendordir)
+ln_relative("rbconfig.rb", "#{archdir}/rbconfig.rb")

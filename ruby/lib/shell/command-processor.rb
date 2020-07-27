@@ -1,7 +1,8 @@
+# frozen_string_literal: false
 #
 #   shell/command-controller.rb -
 #       $Release Version: 0.7 $
-#       $Revision: 38201 $
+#       $Revision: 65506 $
 #       by Keiju ISHITSUKA(keiju@ruby-lang.org)
 #
 # --
@@ -10,12 +11,11 @@
 #
 
 require "e2mmap"
-require "thread"
 
-require "shell/error"
-require "shell/filter"
-require "shell/system-command"
-require "shell/builtin-command"
+require_relative "error"
+require_relative "filter"
+require_relative "system-command"
+require_relative "builtin-command"
 
 class Shell
   # In order to execute a command on your OS, you need to define it as a
@@ -24,7 +24,6 @@ class Shell
   # Alternatively, you can execute any command via
   # Shell::CommandProcessor#system even if it is not defined.
   class CommandProcessor
-#    include Error
 
     #
     # initialize of Shell and related classes.
@@ -54,8 +53,9 @@ class Shell
     # include run file.
     #
     def self.run_config
+      rc = "~/.rb_shell"
       begin
-        load File.expand_path("~/.rb_shell") if ENV.key?("HOME")
+        load File.expand_path(rc) if ENV.key?("HOME")
       rescue LoadError, Errno::ENOENT
       rescue
         print "load error: #{rc}\n"
@@ -121,11 +121,10 @@ class Shell
           end
           f
         else
-          f = File.open(path, mode, perm, &b)
+          File.open(path, mode, perm, &b)
         end
       end
     end
-    #  public :open
 
     # call-seq:
     #   unlink(path)
@@ -369,7 +368,12 @@ class Shell
 
       for p in @shell.system_path
         path = join(p, command)
-        if FileTest.exist?(path)
+        begin
+          st = File.stat(path)
+        rescue SystemCallError
+          next
+        else
+          next unless st.executable? and !st.directory?
           @system_commands[command] = path
           return path
         end
@@ -645,7 +649,6 @@ class Shell
         ["mtime", ["FILENAME"]],
         ["readlink", ["FILENAME"]],
         ["rename", ["FILENAME_FROM", "FILENAME_TO"]],
-        #      ["size", ["FILENAME"]],
         ["split", ["pathname"]],
         ["stat", ["FILENAME"]],
         ["symlink", ["FILENAME_O", "FILENAME_N"]],

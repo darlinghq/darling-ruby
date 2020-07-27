@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 # :markup: tomdoc
 
 # A parser for TomDoc based on TomDoc 1.0.0-rc1 (02adef9b5a)
@@ -129,7 +130,8 @@ class RDoc::TomDoc < RDoc::Markup::Parser
   def initialize
     super
 
-    @section = nil
+    @section      = nil
+    @seen_returns = false
   end
 
   # Internal: Builds a heading from the token stream
@@ -147,7 +149,7 @@ class RDoc::TomDoc < RDoc::Markup::Parser
   end
 
   # Internal: Builds a verbatim from the token stream.  A verbatim in the
-  # Examples section will be marked as in ruby format.
+  # Examples section will be marked as in Ruby format.
   #
   # margin - The indentation from the margin for lines that belong to this
   #          verbatim section.
@@ -176,9 +178,24 @@ class RDoc::TomDoc < RDoc::Markup::Parser
     until @tokens.empty? do
       type, data, = get
 
-      if type == :TEXT then
+      case type
+      when :TEXT then
+        @section = 'Returns' if data =~ /\A(Returns|Raises)/
+
         paragraph << data
-        skip :NEWLINE
+      when :NEWLINE then
+        if :TEXT == peek_token[0] then
+          # Lines beginning with 'Raises' in the Returns section should not be
+          # treated as multiline text
+          if 'Returns' == @section and
+            peek_token[1].start_with?('Raises') then
+            break
+          else
+            paragraph << ' '
+          end
+        else
+          break
+        end
       else
         unget
         break
@@ -190,6 +207,21 @@ class RDoc::TomDoc < RDoc::Markup::Parser
     paragraph
   end
 
+  ##
+  # Detects a section change to "Returns" and adds a heading
+
+  def parse_text parent, indent # :nodoc:
+    paragraph = build_paragraph indent
+
+    if false == @seen_returns and 'Returns' == @section then
+      @seen_returns = true
+      parent << RDoc::Markup::Heading.new(3, 'Returns')
+      parent << RDoc::Markup::BlankLine.new
+    end
+
+    parent << paragraph
+  end
+
   # Internal: Turns text into an Array of tokens
   #
   # text - A String containing TomDoc-format text.
@@ -197,7 +229,7 @@ class RDoc::TomDoc < RDoc::Markup::Parser
   # Returns self.
 
   def tokenize text
-    text.sub!(/\A(Public|Internal|Deprecated):\s+/, '')
+    text = text.sub(/\A(Public|Internal|Deprecated):\s+/, '')
 
     setup_scanner text
 
@@ -230,4 +262,3 @@ class RDoc::TomDoc < RDoc::Markup::Parser
   end
 
 end
-

@@ -3,8 +3,6 @@
 # Copyright (c) 1999-2000 Masatoshi SEKI
 # You can redistribute it and/or modify it under the same terms as Ruby.
 
-require 'thread'
-
 class SimpleTupleSpace
   def initialize
     @hash = {}
@@ -58,10 +56,10 @@ if __FILE__ == $0
   def server(ts)
     Thread.start {
       loop do
-	req = ts.in('req')
-	ac = req[0]
-	num = req[1]
-	ts.out(ac, num * num)
+        req = ts.in('req')
+        ac = req[0]
+        num = req[1]
+        ts.out(ac, num * num)
       end
     }
   end

@@ -1,7 +1,10 @@
-require "rss/rss"
+# frozen_string_literal: false
+require_relative "rss"
 
 module RSS
+  # The prefix for the Dublin Core XML namespace.
   DC_PREFIX = 'dc'
+  # The URI of the Dublin Core specification.
   DC_URI = "http://purl.org/dc/elements/1.1/"
 
   module BaseDublinCoreModel
@@ -158,4 +161,4 @@ end
 
 require 'rss/dublincore/1.0'
 require 'rss/dublincore/2.0'
-require 'rss/dublincore/atom'
+require_relative 'dublincore/atom'

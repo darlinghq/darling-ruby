@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'stringio'
 require 'rubygems/user_interaction'
 
@@ -11,7 +12,7 @@ class Gem::MockGemUi < Gem::StreamUI
 
   class InputEOFError < RuntimeError
 
-    def initialize question
+    def initialize(question)
       super "Out of input for MockGemUi on #{question.inspect}"
     end
 
@@ -20,7 +21,7 @@ class Gem::MockGemUi < Gem::StreamUI
   class TermError < RuntimeError
     attr_reader :exit_code
 
-    def initialize exit_code
+    def initialize(exit_code)
       super
       @exit_code = exit_code
     end
@@ -55,7 +56,7 @@ class Gem::MockGemUi < Gem::StreamUI
     @terminated = false
   end
 
-  def ask question
+  def ask(question)
     raise InputEOFError, question if @ins.eof?
 
     super
@@ -85,4 +86,3 @@ class Gem::MockGemUi < Gem::StreamUI
   end
 
 end
-

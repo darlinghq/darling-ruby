@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'rubygems/test_case'
 require 'rubygems/config_file'
 
@@ -43,6 +44,7 @@ class TestGemConfigFile < Gem::TestCase
     assert_equal Gem::ConfigFile::DEFAULT_BULK_THRESHOLD, @cfg.bulk_threshold
     assert_equal true, @cfg.verbose
     assert_equal [@gem_repo], Gem.sources
+    assert_equal 365, @cfg.cert_expiration_length_days
 
     File.open @temp_conf, 'w' do |fp|
       fp.puts ":backtrace: true"
@@ -57,20 +59,21 @@ class TestGemConfigFile < Gem::TestCase
       fp.puts "- /var/ruby/1.8/gem_home"
       fp.puts ":ssl_verify_mode: 0"
       fp.puts ":ssl_ca_cert: /etc/ssl/certs"
+      fp.puts ":cert_expiration_length_days: 28"
     end
 
     util_config_file
-
     assert_equal true, @cfg.backtrace
     assert_equal 10, @cfg.bulk_threshold
     assert_equal false, @cfg.verbose
     assert_equal false, @cfg.update_sources
-    assert_equal %w[http://more-gems.example.com], Gem.sources
+    assert_equal %w[http://more-gems.example.com], @cfg.sources
     assert_equal '--wrappers', @cfg[:install]
     assert_equal(['/usr/ruby/1.8/lib/ruby/gems/1.8', '/var/ruby/1.8/gem_home'],
                  @cfg.path)
     assert_equal 0, @cfg.ssl_verify_mode
     assert_equal '/etc/ssl/certs', @cfg.ssl_ca_cert
+    assert_equal 28, @cfg.cert_expiration_length_days
   end
 
   def test_initialize_handle_arguments_config_file
@@ -201,6 +204,10 @@ ERROR:  Your gem push credentials file located at:
 
 has file permissions of 0644 but 0600 is required.
 
+To fix this error run:
+
+\tchmod 0600 #{@cfg.credentials_path}
+
 You should reset your credentials at:
 
 \thttps://rubygems.org/profile/edit
@@ -230,16 +237,19 @@ if you believe they were disclosed to a third party.
   end
 
   def test_handle_arguments_debug
-    old_dollar_DEBUG = $DEBUG
     assert_equal false, $DEBUG
 
     args = %w[--debug]
 
-    @cfg.handle_arguments args
+    _, err = capture_io do
+      @cfg.handle_arguments args
+    end
+
+    assert_match 'NOTE', err
 
     assert_equal true, $DEBUG
   ensure
-    $DEBUG = old_dollar_DEBUG
+    $DEBUG = false
   end
 
   def test_handle_arguments_override
@@ -260,6 +270,29 @@ if you believe they were disclosed to a third party.
     @cfg.handle_arguments args
 
     assert_equal true, @cfg.backtrace
+  end
+
+  def test_handle_arguments_norc
+    assert_equal @temp_conf, @cfg.config_file_name
+
+    File.open @temp_conf, 'w' do |fp|
+      fp.puts ":backtrace: true"
+      fp.puts ":update_sources: false"
+      fp.puts ":bulk_threshold: 10"
+      fp.puts ":verbose: false"
+      fp.puts ":sources:"
+      fp.puts "  - http://more-gems.example.com"
+    end
+
+    args = %W[--norc]
+
+    util_config_file args
+
+    assert_equal false, @cfg.backtrace
+    assert_equal true, @cfg.update_sources
+    assert_equal Gem::ConfigFile::DEFAULT_BULK_THRESHOLD, @cfg.bulk_threshold
+    assert_equal true, @cfg.verbose
+    assert_equal [@gem_repo], Gem.sources
   end
 
   def test_load_api_keys
@@ -311,7 +344,7 @@ if you believe they were disclosed to a third party.
 
     assert_equal expected, YAML.load_file(@cfg.credentials_path)
 
-    unless win_platform? then
+    unless win_platform?
       stat = File.stat @cfg.credentials_path
 
       assert_equal 0600, stat.mode & 0600
@@ -373,6 +406,9 @@ if you believe they were disclosed to a third party.
       fp.puts ":verbose: false"
       fp.puts ":sources:"
       fp.puts "  - http://more-gems.example.com"
+      fp.puts ":ssl_verify_mode: 2"
+      fp.puts ":ssl_ca_cert: /nonexistent/ca_cert.pem"
+      fp.puts ":ssl_client_cert: /nonexistent/client_cert.pem"
       fp.puts "install: --wrappers"
     end
 
@@ -395,6 +431,10 @@ if you believe they were disclosed to a third party.
     assert_equal false, @cfg.update_sources, 'update_sources'
     assert_equal false, @cfg.verbose,        'verbose'
 
+    assert_equal 2,                              @cfg.ssl_verify_mode
+    assert_equal '/nonexistent/ca_cert.pem',     @cfg.ssl_ca_cert
+    assert_equal '/nonexistent/client_cert.pem', @cfg.ssl_client_cert
+
     assert_equal '--wrappers --no-rdoc', @cfg[:install], 'install'
 
     assert_equal %w[http://even-more-gems.example.com], Gem.sources
@@ -402,14 +442,16 @@ if you believe they were disclosed to a third party.
 
   def test_ignore_invalid_config_file
     File.open @temp_conf, 'w' do |fp|
-      fp.puts "some-non-yaml-hash-string"
+      fp.puts "invalid: yaml:"
     end
 
-    # Avoid writing stuff to output when running tests
-    Gem::ConfigFile.class_eval { def warn(args); end }
+    begin
+      verbose, $VERBOSE = $VERBOSE, nil
 
-    # This should not raise exception
-    util_config_file
+      util_config_file
+    ensure
+      $VERBOSE = verbose
+    end
   end
 
   def test_load_ssl_verify_mode_from_config
@@ -428,6 +470,14 @@ if you believe they were disclosed to a third party.
     assert_equal('/home/me/certs', @cfg.ssl_ca_cert)
   end
 
+  def test_load_ssl_client_cert_from_config
+    File.open @temp_conf, 'w' do |fp|
+      fp.puts ":ssl_client_cert: /home/me/mine.pem"
+    end
+    util_config_file
+    assert_equal('/home/me/mine.pem', @cfg.ssl_client_cert)
+  end
+
   def util_config_file(args = @cfg_args)
     @cfg = Gem::ConfigFile.new args
   end
@@ -440,4 +490,3 @@ if you believe they were disclosed to a third party.
     assert_equal(true, @cfg.disable_default_gem_server)
   end
 end
-

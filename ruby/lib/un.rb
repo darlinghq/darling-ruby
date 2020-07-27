@@ -1,3 +1,4 @@
+# frozen_string_literal: false
 #
 # = un.rb
 #
@@ -32,7 +33,9 @@ module FileUtils
   @fileutils_output = $stdout
 end
 
+# :nodoc:
 def setup(options = "", *long_options)
+  caller = caller_locations(1, 1)[0].label
   opt_hash = {}
   argv = []
   OptionParser.new do |o|
@@ -44,7 +47,7 @@ def setup(options = "", *long_options)
     end
     long_options.each do |s|
       opt_name, arg_name = s.split(/(?=[\s=])/, 2)
-      opt_name.sub!(/\A--/, '')
+      opt_name.delete_prefix!('--')
       s = "--#{opt_name.gsub(/([A-Z]+|[a-z])([A-Z])/, '\1-\2').downcase}#{arg_name}"
       puts "#{opt_name}=>#{s}" if $DEBUG
       opt_name = opt_name.intern
@@ -53,6 +56,10 @@ def setup(options = "", *long_options)
       end
     end
     o.on("-v") do opt_hash[:verbose] = true end
+    o.on("--help") do
+      UN.help([caller])
+      exit
+    end
     o.order!(ARGV) do |x|
       if /[*?\[{]/ =~ x
         argv.concat(Dir[x])
@@ -182,13 +189,17 @@ end
 #   -p          apply access/modification times of SOURCE files to
 #               corresponding destination files
 #   -m          set permission mode (as in chmod), instead of 0755
+#   -o          set owner user id, instead of the current owner
+#   -g          set owner group id, instead of the current group
 #   -v          verbose
 #
 
 def install
-  setup("pm:") do |argv, options|
-    options[:mode] = (mode = options.delete :m) ? mode.oct : 0755
+  setup("pm:o:g:") do |argv, options|
+    (mode = options.delete :m) and options[:mode] = /\A\d/ =~ mode ? mode.oct : mode
     options[:preserve] = true if options.delete :p
+    (owner = options.delete :o) and options[:owner] = owner
+    (group = options.delete :g) and options[:group] = group
     dest = argv.pop
     argv = argv[0] if argv.size == 1
     FileUtils.install argv, dest, options
@@ -205,7 +216,8 @@ end
 
 def chmod
   setup do |argv, options|
-    mode = argv.shift.oct
+    mode = argv.shift
+    mode = /\A\d/ =~ mode ? mode.oct : mode
     FileUtils.chmod mode, argv, options
   end
 end
@@ -246,8 +258,10 @@ def wait_writable
         break
       rescue Errno::EACCES => e
         raise if n and (n -= 1) <= 0
-        puts e
-        STDOUT.flush
+        if verbose
+          puts e
+          STDOUT.flush
+        end
         sleep wait
         retry
       end
@@ -299,22 +313,35 @@ end
 #   --do-not-reverse-lookup     disable reverse lookup
 #   --request-timeout=SECOND    request timeout in seconds
 #   --http-version=VERSION      HTTP version
+#   --server-name=NAME          name of the server host
+#   --server-software=NAME      name and version of the server
+#   --ssl-certificate=CERT      The SSL certificate file for the server
+#   --ssl-private-key=KEY       The SSL private key file for the server certificate
 #   -v                          verbose
 #
 
 def httpd
   setup("", "BindAddress=ADDR", "Port=PORT", "MaxClients=NUM", "TempDir=DIR",
-        "DoNotReverseLookup", "RequestTimeout=SECOND", "HTTPVersion=VERSION") do
+        "DoNotReverseLookup", "RequestTimeout=SECOND", "HTTPVersion=VERSION",
+        "ServerName=NAME", "ServerSoftware=NAME",
+        "SSLCertificate=CERT", "SSLPrivateKey=KEY") do
     |argv, options|
     require 'webrick'
     opt = options[:RequestTimeout] and options[:RequestTimeout] = opt.to_i
     [:Port, :MaxClients].each do |name|
       opt = options[name] and (options[name] = Integer(opt)) rescue nil
     end
-    unless argv.size == 1
-      raise ArgumentError, "DocumentRoot is mandatory"
+    if cert = options[:SSLCertificate]
+      key = options[:SSLPrivateKey] or
+        raise "--ssl-private-key option must also be given"
+      require 'webrick/https'
+      options[:SSLEnable] = true
+      options[:SSLCertificate] = OpenSSL::X509::Certificate.new(File.read(cert))
+      options[:SSLPrivateKey] = OpenSSL::PKey.read(File.read(key))
+      options[:Port] ||= 8443   # HTTPS Alternate
     end
-    options[:DocumentRoot] = argv.shift
+    options[:Port] ||= 8080     # HTTP Alternate
+    options[:DocumentRoot] = argv.shift || '.'
     s = WEBrick::HTTPServer.new(options)
     shut = proc {s.shutdown}
     siglist = %w"TERM QUIT"
@@ -335,15 +362,33 @@ end
 
 def help
   setup do |argv,|
+    UN.help(argv)
+  end
+end
+
+module UN # :nodoc:
+  module_function
+  def help(argv, output: $stdout)
     all = argv.empty?
+    cmd = nil
+    if all
+      store = proc {|msg| output << msg}
+    else
+      messages = {}
+      store = proc {|msg| messages[cmd] = msg}
+    end
     open(__FILE__) do |me|
       while me.gets("##\n")
         if help = me.gets("\n\n")
-          if all or argv.delete help[/-e \w+/].sub(/-e /, "")
-            print help.gsub(/^# ?/, "")
+          if all or argv.include?(cmd = help[/^#\s*ruby\s.*-e\s+(\w+)/, 1])
+            store[help.gsub(/^# ?/, "")]
+            break unless all or argv.size > messages.size
           end
         end
       end
+    end
+    if messages
+      argv.each {|arg| output << messages[arg]}
     end
   end
 end

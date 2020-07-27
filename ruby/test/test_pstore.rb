@@ -1,7 +1,7 @@
+# frozen_string_literal: true
 require 'test/unit'
 require 'pstore'
 require 'tmpdir'
-require_relative 'ruby/envutil'
 
 class PStoreTest < Test::Unit::TestCase
   def setup
@@ -75,30 +75,43 @@ class PStoreTest < Test::Unit::TestCase
   end
 
   def test_thread_safe
+    q1 = Queue.new
     assert_raise(PStore::Error) do
-      flag = false
-      Thread.new do
+      th = Thread.new do
         @pstore.transaction do
           @pstore[:foo] = "bar"
-          flag = true
-          sleep 1
+          q1.push true
+          sleep
         end
       end
-      sleep 0.1 until flag
-      @pstore.transaction {}
+      begin
+        q1.pop
+        @pstore.transaction {}
+      ensure
+        th.kill
+        th.join
+      end
     end
+    q2 = Queue.new
     begin
       pstore = PStore.new(second_file, true)
-      flag = false
-      Thread.new do
+      cur = Thread.current
+      th = Thread.new do
         pstore.transaction do
           pstore[:foo] = "bar"
-          flag = true
-          sleep 1
+          q1.push true
+          q2.pop
+          # wait for cur to enter a transaction
+          sleep 0.1 until cur.stop?
         end
       end
-      sleep 0.1 until flag
-      assert_equal("bar", pstore.transaction { pstore[:foo] })
+      begin
+        q1.pop
+        q2.push true
+        assert_equal("bar", pstore.transaction { pstore[:foo] })
+      ensure
+        th.join
+      end
     end
   ensure
     File.unlink(second_file) rescue nil

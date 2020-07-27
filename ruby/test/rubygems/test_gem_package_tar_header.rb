@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'rubygems/package/tar_test_case'
 require 'rubygems/package'
 
@@ -31,6 +32,8 @@ class TestGemPackageTarHeader < Gem::Package::TarTestCase
     new_header = Gem::Package::TarHeader.from io
 
     assert_headers_equal @tar_header, new_header
+  ensure
+    io.close!
   end
 
   def test_initialize
@@ -70,6 +73,20 @@ class TestGemPackageTarHeader < Gem::Package::TarTestCase
     assert_raises ArgumentError do
       Gem::Package::TarHeader.new :prefix => '', :size => '', :mode => ''
     end
+  end
+
+  def test_initialize_typeflag
+    header = {
+      :mode     => '',
+      :name     => '',
+      :prefix   => '',
+      :size     => '',
+      :typeflag => '',
+    }
+
+    tar_header = Gem::Package::TarHeader.new header
+
+    assert_equal '0', tar_header.typeflag
   end
 
   def test_empty_eh
@@ -126,5 +143,25 @@ group\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000
     assert_equal '012467', @tar_header.checksum
   end
 
-end
+  def test_from_bad_octal
+    test_cases = [
+      "00000006,44\000", # bogus character
+      "00000006789\000", # non-octal digit
+      "+0000001234\000", # positive sign
+      "-0000001000\000", # negative sign
+      "0x000123abc\000", # radix prefix
+    ]
 
+    test_cases.each do |val|
+      header_s = @tar_header.to_s
+      # overwrite the size field
+      header_s[124, 12] = val
+      io = TempIO.new header_s
+      assert_raises ArgumentError do
+        Gem::Package::TarHeader.from io
+      end
+      io.close!
+    end
+  end
+
+end

@@ -72,7 +72,7 @@ static size_t
 fiddle_ptr_memsize(const void *ptr)
 {
     const struct ptr_data *data = ptr;
-    return data ? sizeof(*data) + data->size : 0;
+    return sizeof(*data) + data->size;
 }
 
 static const rb_data_type_t fiddle_ptr_data_type = {
@@ -86,7 +86,6 @@ rb_fiddle_ptr_new2(VALUE klass, void *ptr, long size, freefunc_t func)
     struct ptr_data *data;
     VALUE val;
 
-    rb_secure(4);
     val = TypedData_Make_Struct(klass, struct ptr_data, &fiddle_ptr_data_type, data);
     data->ptr = ptr;
     data->free = func;
@@ -107,7 +106,6 @@ rb_fiddle_ptr_malloc(long size, freefunc_t func)
 {
     void *ptr;
 
-    rb_secure(4);
     ptr = ruby_xmalloc((size_t)size);
     memset(ptr,0,(size_t)size);
     return rb_fiddle_ptr_new(ptr, size, func);
@@ -139,7 +137,6 @@ rb_fiddle_ptr_s_allocate(VALUE klass)
     VALUE obj;
     struct ptr_data *data;
 
-    rb_secure(4);
     obj = TypedData_Make_Struct(klass, struct ptr_data, &fiddle_ptr_data_type, data);
     data->ptr = 0;
     data->size = 0;
@@ -443,7 +440,7 @@ rb_fiddle_ptr_inspect(VALUE self)
 
     TypedData_Get_Struct(self, struct ptr_data, &fiddle_ptr_data_type, data);
     return rb_sprintf("#<%"PRIsVALUE":%p ptr=%p size=%ld free=%p>",
-		      RB_OBJ_CLASSNAME(self), data, data->ptr, data->size, data->free);
+		      RB_OBJ_CLASSNAME(self), (void *)data, data->ptr, data->size, (void *)data->free);
 }
 
 /*
@@ -680,6 +677,7 @@ rb_fiddle_ptr_s_to_ptr(VALUE self, VALUE val)
 void
 Init_fiddle_pointer(void)
 {
+#undef rb_intern
     id_to_ptr = rb_intern("to_ptr");
 
     /* Document-class: Fiddle::Pointer

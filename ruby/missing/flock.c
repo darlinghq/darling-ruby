@@ -2,9 +2,9 @@
 #include "ruby/ruby.h"
 
 #if defined _WIN32
-#elif defined HAVE_FCNTL && defined HAVE_FCNTL_H && !defined(__native_client__)
+#elif defined HAVE_FCNTL && defined HAVE_FCNTL_H
 
-/* These are the flock() constants.  Since this sytems doesn't have
+/* These are the flock() constants.  Since this systems doesn't have
    flock(), the values of the constants are probably not available.
 */
 # ifndef LOCK_SH
@@ -73,7 +73,7 @@ flock(int fd, int operation)
 #  define F_TEST	3	/* Test a region for other processes locks */
 # endif
 
-/* These are the flock() constants.  Since this sytems doesn't have
+/* These are the flock() constants.  Since this systems doesn't have
    flock(), the values of the constants are probably not available.
 */
 # ifndef LOCK_SH

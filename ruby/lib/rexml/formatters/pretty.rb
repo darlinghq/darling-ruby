@@ -1,4 +1,5 @@
-require 'rexml/formatters/default'
+# frozen_string_literal: false
+require_relative 'default'
 
 module REXML
   module Formatters
@@ -24,7 +25,7 @@ module REXML
       #   is undefined.  Defaults to 2.
       # ie_hack::
       #   If true, the printer will insert whitespace before closing empty
-      #   tags, thereby allowing Internet Explorer's feeble XML parser to
+      #   tags, thereby allowing Internet Explorer's XML parser to
       #   function. Defaults to false.
       def initialize( indentation=2, ie_hack=false )
         @indentation = indentation

@@ -1,4 +1,5 @@
-require 'rdoc/test_case'
+# frozen_string_literal: true
+require 'minitest_helper'
 
 class TestRDocParserChangeLog < RDoc::TestCase
 
@@ -12,14 +13,7 @@ class TestRDocParserChangeLog < RDoc::TestCase
   end
 
   def teardown
-    @tempfile.close
-  end
-
-  def mu_pp obj
-    s = ''
-    s = PP.pp obj, s
-    s = s.force_encoding Encoding.default_external if defined? Encoding
-    s.chomp
+    @tempfile.close!
   end
 
   def test_class_can_parse
@@ -39,7 +33,7 @@ class TestRDocParserChangeLog < RDoc::TestCase
   def test_continue_entry_body
     parser = util_parser
 
-    entry_body = ['a']
+    entry_body = ['a'.dup]
 
     parser.continue_entry_body entry_body, 'b'
 
@@ -59,7 +53,7 @@ class TestRDocParserChangeLog < RDoc::TestCase
   def test_continue_entry_body_function
     parser = util_parser
 
-    entry_body = ['file: (func1)']
+    entry_body = ['file: (func1)'.dup]
 
     parser.continue_entry_body entry_body, '(func2): blah'
 

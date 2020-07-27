@@ -1,6 +1,7 @@
+# frozen_string_literal: false
 require 'socket'
 require 'openssl'
-require 'drb/drb'
+require_relative 'drb'
 require 'singleton'
 
 module DRb
@@ -42,7 +43,7 @@ module DRb
       # Create a new DRb::DRbSSLSocket::SSLConfig instance
       #
       # The DRb::DRbSSLSocket will take either a +config+ Hash or an instance
-      # of SSLConfg, and will setup the certificate for its session for the
+      # of SSLConfig, and will setup the certificate for its session for the
       # configuration. If want it to generate a generic certificate, the bare
       # minimum is to provide the :SSLCertName
       #
@@ -161,7 +162,7 @@ module DRb
           return
         end
 
-        rsa = OpenSSL::PKey::RSA.new(1024){|p, n|
+        rsa = OpenSSL::PKey::RSA.new(2048){|p, n|
           next unless self[:verbose]
           case p
           when 0; $stderr.putc "."  # BN_generate_prime
@@ -195,7 +196,7 @@ module DRb
         if comment = self[:SSLCertComment]
           cert.add_extension(ef.create_extension("nsComment", comment))
         end
-        cert.sign(rsa, OpenSSL::Digest::SHA1.new)
+        cert.sign(rsa, OpenSSL::Digest::SHA256.new)
 
         @cert = cert
         @pkey = rsa
@@ -225,13 +226,13 @@ module DRb
     #
     # Raises DRbBadScheme or DRbBadURI if +uri+ is not matching or malformed
     def self.parse_uri(uri) # :nodoc:
-      if uri =~ /^drbssl:\/\/(.*?):(\d+)(\?(.*))?$/
+      if /\Adrbssl:\/\/(.*?):(\d+)(\?(.*))?\z/ =~ uri
         host = $1
         port = $2.to_i
         option = $4
         [host, port, option]
       else
-        raise(DRbBadScheme, uri) unless uri =~ /^drbssl:/
+        raise(DRbBadScheme, uri) unless uri.start_with?('drbssl:')
         raise(DRbBadURI, 'can\'t parse uri:' + uri)
       end
     end
@@ -299,7 +300,7 @@ module DRb
     # +uri+ is the URI we are connected to.
     # +soc+ is the tcp socket we are bound to.
     # +config+ is our configuration. Either a Hash or SSLConfig
-    # +is_established+ is a boolean of whether +soc+ is currenly established
+    # +is_established+ is a boolean of whether +soc+ is currently established
     #
     # This is called automatically based on the DRb protocol.
     def initialize(uri, soc, config, is_established)
@@ -322,19 +323,20 @@ module DRb
     def accept # :nodoc:
       begin
       while true
-        soc = @socket.accept
+        soc = accept_or_shutdown
+        return nil unless soc
         break if (@acl ? @acl.allow_socket?(soc) : true)
         soc.close
       end
       begin
-	ssl = @config.accept(soc)
+        ssl = @config.accept(soc)
       rescue Exception
         soc.close
         raise
       end
       self.class.new(uri, ssl, @config, true)
       rescue OpenSSL::SSL::SSLError
-        warn("#{__FILE__}:#{__LINE__}: warning: #{$!.message} (#{$!.class})") if @config[:verbose]
+        warn("#{$!.message} (#{$!.class})", uplevel: 0) if @config[:verbose]
         retry
       end
     end

@@ -1,28 +1,6 @@
-class Gem::Source::SpecificFile < Gem::Source
-  def initialize(file)
-    @uri = nil
-    @path = ::File.expand_path(file)
+# frozen_string_literal: true
+require 'rubygems/source/specific_file'
 
-    @package = Gem::Package.new @path
-    @spec = @package.spec
-    @name = @spec.name_tuple
-  end
-
-  attr_reader :spec
-
-  def load_specs(*a)
-    [@name]
-  end
-
-  def fetch_spec(name)
-    return @spec if name == @name
-    raise Gem::Exception, "Unable to find '#{name}'"
-    @spec
-  end
-
-  def download(spec, dir=nil)
-    return @path if spec == @spec
-    raise Gem::Exception, "Unable to download '#{spec.full_name}'"
-  end
-
+unless Gem::Deprecate.skip
+  Kernel.warn "#{Gem.location_of_caller(3).join(':')}: Warning: Requiring rubygems/source_specific_file is deprecated; please use rubygems/source/specific_file instead."
 end

@@ -1,3 +1,4 @@
+# frozen_string_literal: false
 #
 # filehandler.rb -- FileHandler Module
 #
@@ -8,12 +9,11 @@
 #
 # $IPR: filehandler.rb,v 1.44 2003/06/07 01:34:51 gotoyuzo Exp $
 
-require 'thread'
 require 'time'
 
-require 'webrick/htmlutils'
-require 'webrick/httputils'
-require 'webrick/httpstatus'
+require_relative '../htmlutils'
+require_relative '../httputils'
+require_relative '../httpstatus'
 
 module WEBrick
   module HTTPServlet
@@ -55,9 +55,9 @@ module WEBrick
         else
           mtype = HTTPUtils::mime_type(@local_path, @config[:MimeTypes])
           res['content-type'] = mtype
-          res['content-length'] = st.size
+          res['content-length'] = st.size.to_s
           res['last-modified'] = mtime.httpdate
-          res.body = open(@local_path, "rb")
+          res.body = File.open(@local_path, "rb")
         end
       end
 
@@ -86,47 +86,66 @@ module WEBrick
         return false
       end
 
+      # returns a lambda for webrick/httpresponse.rb send_body_proc
+      def multipart_body(body, parts, boundary, mtype, filesize)
+        lambda do |socket|
+          begin
+            begin
+              first = parts.shift
+              last = parts.shift
+              socket.write(
+                "--#{boundary}#{CRLF}" \
+                "Content-Type: #{mtype}#{CRLF}" \
+                "Content-Range: bytes #{first}-#{last}/#{filesize}#{CRLF}" \
+                "#{CRLF}"
+              )
+
+              begin
+                IO.copy_stream(body, socket, last - first + 1, first)
+              rescue NotImplementedError
+                body.seek(first, IO::SEEK_SET)
+                IO.copy_stream(body, socket, last - first + 1)
+              end
+              socket.write(CRLF)
+            end while parts[0]
+            socket.write("--#{boundary}--#{CRLF}")
+          ensure
+            body.close
+          end
+        end
+      end
+
       def make_partial_content(req, res, filename, filesize)
         mtype = HTTPUtils::mime_type(filename, @config[:MimeTypes])
         unless ranges = HTTPUtils::parse_range_header(req['range'])
           raise HTTPStatus::BadRequest,
             "Unrecognized range-spec: \"#{req['range']}\""
         end
-        open(filename, "rb"){|io|
+        File.open(filename, "rb"){|io|
           if ranges.size > 1
             time = Time.now
             boundary = "#{time.sec}_#{time.usec}_#{Process::pid}"
-            body = ''
-            ranges.each{|range|
-              first, last = prepare_range(range, filesize)
-              next if first < 0
-              io.pos = first
-              content = io.read(last-first+1)
-              body << "--" << boundary << CRLF
-              body << "Content-Type: #{mtype}" << CRLF
-              body << "Content-Range: bytes #{first}-#{last}/#{filesize}" << CRLF
-              body << CRLF
-              body << content
-              body << CRLF
+            parts = []
+            ranges.each {|range|
+              prange = prepare_range(range, filesize)
+              next if prange[0] < 0
+              parts.concat(prange)
             }
-            raise HTTPStatus::RequestRangeNotSatisfiable if body.empty?
-            body << "--" << boundary << "--" << CRLF
+            raise HTTPStatus::RequestRangeNotSatisfiable if parts.empty?
             res["content-type"] = "multipart/byteranges; boundary=#{boundary}"
-            res.body = body
+            if req.http_version < '1.1'
+              res['connection'] = 'close'
+            else
+              res.chunked = true
+            end
+            res.body = multipart_body(io.dup, parts, boundary, mtype, filesize)
           elsif range = ranges[0]
             first, last = prepare_range(range, filesize)
             raise HTTPStatus::RequestRangeNotSatisfiable if first < 0
-            if last == filesize - 1
-              content = io.dup
-              content.pos = first
-            else
-              io.pos = first
-              content = io.read(last-first+1)
-            end
             res['content-type'] = mtype
             res['content-range'] = "bytes #{first}-#{last}/#{filesize}"
-            res['content-length'] = last - first + 1
-            res.body = content
+            res['content-length'] = (last - first + 1).to_s
+            res.body = io.dup
           else
             raise HTTPStatus::BadRequest
           end
@@ -150,7 +169,8 @@ module WEBrick
     #
     # Example:
     #
-    #   server.mount '/assets', WEBrick::FileHandler, '/path/to/assets'
+    #   server.mount('/assets', WEBrick::HTTPServlet::FileHandler,
+    #                '/path/to/assets')
 
     class FileHandler < AbstractServlet
       HandlerTable = Hash.new # :nodoc:
@@ -424,11 +444,18 @@ module WEBrick
         }
         list.compact!
 
-        if    d0 = req.query["N"]; idx = 0
-        elsif d0 = req.query["M"]; idx = 1
-        elsif d0 = req.query["S"]; idx = 2
-        else  d0 = "A"           ; idx = 0
+        query = req.query
+
+        d0 = nil
+        idx = nil
+        %w[N M S].each_with_index do |q, i|
+          if d = query.delete(q)
+            idx ||= i
+            d0 ||= d
+          end
         end
+        d0 ||= "A"
+        idx ||= 0
         d1 = (d0 == "A") ? "D" : "A"
 
         if d0 == "A"
@@ -437,38 +464,66 @@ module WEBrick
           list.sort!{|a,b| b[idx] <=> a[idx] }
         end
 
-        res['content-type'] = "text/html"
+        namewidth = query["NameWidth"]
+        if namewidth == "*"
+          namewidth = nil
+        elsif !namewidth or (namewidth = namewidth.to_i) < 2
+          namewidth = 25
+        end
+        query = query.inject('') {|s, (k, v)| s << '&' << HTMLUtils::escape("#{k}=#{v}")}
 
+        type = "text/html"
+        case enc = Encoding.find('filesystem')
+        when Encoding::US_ASCII, Encoding::ASCII_8BIT
+        else
+          type << "; charset=\"#{enc.name}\""
+        end
+        res['content-type'] = type
+
+        title = "Index of #{HTMLUtils::escape(req.path)}"
         res.body = <<-_end_of_html_
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
 <HTML>
-  <HEAD><TITLE>Index of #{HTMLUtils::escape(req.path)}</TITLE></HEAD>
+  <HEAD>
+    <TITLE>#{title}</TITLE>
+    <style type="text/css">
+    <!--
+    .name, .mtime { text-align: left; }
+    .size { text-align: right; }
+    td { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+    table { border-collapse: collapse; }
+    tr th { border-bottom: 2px groove; }
+    //-->
+    </style>
+  </HEAD>
   <BODY>
-    <H1>Index of #{HTMLUtils::escape(req.path)}</H1>
+    <H1>#{title}</H1>
         _end_of_html_
 
-        res.body << "<PRE>\n"
-        res.body << " <A HREF=\"?N=#{d1}\">Name</A>                          "
-        res.body << "<A HREF=\"?M=#{d1}\">Last modified</A>         "
-        res.body << "<A HREF=\"?S=#{d1}\">Size</A>\n"
-        res.body << "<HR>\n"
+        res.body << "<TABLE width=\"100%\"><THEAD><TR>\n"
+        res.body << "<TH class=\"name\"><A HREF=\"?N=#{d1}#{query}\">Name</A></TH>"
+        res.body << "<TH class=\"mtime\"><A HREF=\"?M=#{d1}#{query}\">Last modified</A></TH>"
+        res.body << "<TH class=\"size\"><A HREF=\"?S=#{d1}#{query}\">Size</A></TH>\n"
+        res.body << "</TR></THEAD>\n"
+        res.body << "<TBODY>\n"
 
+        query.sub!(/\A&/, '?')
         list.unshift [ "..", File::mtime(local_path+"/.."), -1 ]
         list.each{ |name, time, size|
           if name == ".."
             dname = "Parent Directory"
-          elsif name.bytesize > 25
-            dname = name.sub(/^(.{23})(?:.*)/, '\1..')
+          elsif namewidth and name.size > namewidth
+            dname = name[0...(namewidth - 2)] << '..'
           else
             dname = name
           end
-          s =  " <A HREF=\"#{HTTPUtils::escape(name)}\">#{HTMLUtils::escape(dname)}</A>"
-          s << " " * (30 - dname.bytesize)
-          s << (time ? time.strftime("%Y/%m/%d %H:%M      ") : " " * 22)
-          s << (size >= 0 ? size.to_s : "-") << "\n"
+          s =  "<TR><TD class=\"name\"><A HREF=\"#{HTTPUtils::escape(name)}#{query if name.end_with?('/')}\">#{HTMLUtils::escape(dname)}</A></TD>"
+          s << "<TD class=\"mtime\">" << (time ? time.strftime("%Y/%m/%d %H:%M") : "") << "</TD>"
+          s << "<TD class=\"size\">" << (size >= 0 ? size.to_s : "-") << "</TD></TR>\n"
           res.body << s
         }
-        res.body << "</PRE><HR>"
+        res.body << "</TBODY></TABLE>"
+        res.body << "<HR>"
 
         res.body << <<-_end_of_html_
     <ADDRESS>

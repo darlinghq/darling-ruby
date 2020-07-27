@@ -1,7 +1,7 @@
 #include <ruby.h>
 
 static VALUE
-bug_i(VALUE i, VALUE arg)
+bug_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, arg))
 {
     rb_notimplement();
     return ID2SYM(rb_frame_this_func());
@@ -16,7 +16,7 @@ bug_start(VALUE self, VALUE hash)
 }
 
 void
-Init_bug(void)
+Init_bug_3571(void)
 {
     VALUE mBug = rb_define_module("Bug");
     rb_define_module_function(mBug, "start", bug_start, 0);
