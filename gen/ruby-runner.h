@@ -1,0 +1,9 @@
+#define ABS_SRCDIR "/Users/ariel/git/darling/src/external/ruby/gen/../ruby"
+#define BUILDDIR   "/Users/ariel/git/darling/src/external/ruby/gen"
+#define LIBPATHENV "DYLD_FALLBACK_LIBRARY_PATH"
+#define PRELOADENV "DYLD_INSERT_LIBRARIES"
+#define PATH_SEPARATOR ":"
+#define PATH_SEP   ':'
+#define EXTOUT     ".ext"
+#define ARCH       "universal-darwin19"
+#define SOEXT      "dylib"

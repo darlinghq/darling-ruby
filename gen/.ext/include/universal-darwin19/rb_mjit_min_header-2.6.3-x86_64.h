@@ -1,0 +1,1 @@
+#error MJIT does not support '/Users/ariel/private-bin/clang -arch x86_64' yet

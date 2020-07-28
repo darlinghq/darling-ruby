@@ -1,0 +1,11 @@
+*.o
+*.log
+*.time
+*.dSYM
+*.dylib
+*.bundle
+*.list
+/gen/exe/ruby
+/gen/.ext/rdoc
+/gen/miniruby
+/gen/ruby

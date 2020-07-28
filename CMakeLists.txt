@@ -1,67 +1,76 @@
 project(ruby)
 
 include_directories(
-	${CMAKE_CURRENT_SOURCE_DIR}/include
 	${CMAKE_CURRENT_SOURCE_DIR}/gen
-	${CMAKE_CURRENT_SOURCE_DIR}/ruby
+	${CMAKE_CURRENT_SOURCE_DIR}/gen/.ext/include/universal-darwin19
 	${CMAKE_CURRENT_SOURCE_DIR}/ruby/include
+	${CMAKE_CURRENT_SOURCE_DIR}/ruby
+	${CMAKE_CURRENT_SOURCE_DIR}/ruby/enc/unicode/12.1.0
 )
 
-add_definitions(
+add_compile_options(
 	-w
 	-nostdinc
-
-	-D_FORTIFY_SOURCE=2
-	-D_XOPEN_SOURCE
-	-D_DARWIN_UNLIMITED_SELECT
-	-D_REENTRANT
-	-DMACOSX
-	-DRUBY_PLATFORM_OS="darwin16"
-
-	-DFALSE=0
-	-DTRUE=1
-
-	-DDTRACE_PROBES_DISABLED # So nice of them to have this!
 )
 
-# FIXME: These are for ld64 -Wl,-multiply_defined,suppress
-set(ruby_link_flags "-Wl,-multiply_defined,suppress -fstack-protector -nodefaultlibs -nostdlib")
+add_compile_definitions(
+	HAVE_GCC_ATOMIC_BUILTINS
 
-# The C_FLAG -fno-strict-overflow should be used, but Clang doesn't know what it is
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fwrapv -fstack-protector -include ruby/config.h -include ruby/missing.h -include ruby.h")
+	_XOPEN_SOURCE
+	_DARWIN_C_SOURCE
+	_DARWIN_UNLIMITED_SELECT
+	_REENTRANT
 
-set(CMAKE_SHARED_LINKER_FLAGS "${ruby_link_flags}")
-set(CMAKE_EXE_LINKER_FLAGS "${ruby_link_flags}")
+	DTRACE_PROBES_DISABLED=1 # So nice of them to have this!
+)
+
+add_link_options(
+	-Wl,-undefined,dynamic_lookup
+	-Wl,-multiply_defined,suppress
+)
 
 set(ruby_sources
-	ruby/dln.c
-	ruby/encoding.c
-	ruby/version.c
+	ruby/addr2line.c
 	ruby/array.c
+	ruby/ast.c
 	ruby/bignum.c
 	ruby/class.c
 	ruby/compar.c
+	ruby/compile.c
 	ruby/complex.c
+	ruby/cont.c
+	ruby/debug_counter.c
+	ruby/debug.c
 	ruby/dir.c
 	ruby/dln_find.c
+	ruby/dln.c
+	ruby/dmyenc.c
+	ruby/dmyext.c
+	ruby/encoding.c
 	ruby/enum.c
 	ruby/enumerator.c
 	ruby/error.c
 	ruby/eval.c
-	ruby/load.c
-	ruby/proc.c
 	ruby/file.c
 	ruby/gc.c
 	ruby/hash.c
 	ruby/inits.c
 	ruby/io.c
+	ruby/iseq.c
+	ruby/load.c
+	ruby/loadpath.c
+	ruby/localeinit.c
 	ruby/marshal.c
 	ruby/math.c
+	ruby/mjit_compile.c
+	ruby/mjit.c
 	ruby/node.c
 	ruby/numeric.c
 	ruby/object.c
 	ruby/pack.c
 	ruby/parse.c
+	ruby/prelude.c
+	ruby/proc.c
 	ruby/process.c
 	ruby/random.c
 	ruby/range.c
@@ -81,76 +90,89 @@ set(ruby_sources
 	ruby/strftime.c
 	ruby/string.c
 	ruby/struct.c
+	ruby/symbol.c
+	ruby/thread.c
 	ruby/time.c
 	ruby/transcode.c
+	ruby/transient_heap.c
 	ruby/util.c
 	ruby/variable.c
-	ruby/compile.c
-	ruby/debug.c
-	ruby/iseq.c
-	ruby/vm.c
-	ruby/vm_dump.c
+	ruby/version.c
 	ruby/vm_backtrace.c
+	ruby/vm_dump.c
 	ruby/vm_trace.c
-	ruby/thread.c
-	ruby/cont.c
+	ruby/vm.c
+
+	ruby/missing/explicit_bzero.c
+	ruby/missing/setproctitle.c
 
 	ruby/enc/ascii.c
-	ruby/enc/us_ascii.c
 	ruby/enc/unicode.c
+	ruby/enc/us_ascii.c
 	ruby/enc/utf_8.c
-
-	ruby/newline.c
-	ruby/missing/setproctitle.c
-	gen/prelude.c
-	ruby/dmyext.c
+	ruby/enc/trans/newline.c
 )
 
-#add_library(ruby-static STATIC
-#	$<TARGET_OBJECTS:rubycore>
-#)
-
+set(DYLIB_COMPAT_VERSION "2.6")
+set(DYLIB_CURRENT_VERSION "2.6.3")
 add_framework(Ruby
 	FAT CURRENT_VERSION
-	VERSION "2.0"
+	VERSION "2.6"
 	SOURCES
 		${ruby_sources}
 	DEPENDENCIES
-		system
+		Security
+		Foundation
 		objc
+		system
+)
+target_compile_definitions(Ruby PRIVATE
+	RUBY_EXPORT
+	CANONICALIZATION_FOR_MATHN
 )
 
-add_darling_executable(ruby ruby/main.c ruby/dmyext.c)
+add_darling_executable(ruby ruby/main.c)
 make_fat(ruby)
-target_link_libraries(ruby system Ruby_2.0)
+target_link_libraries(ruby
+	Ruby
+)
 
 function(add_ruby_bundle name)
-	add_darling_bundle("ruby_${name}" "${CMAKE_CURRENT_BINARY_DIR}/ruby" ${ARGN})
-	set_target_properties(
-		"ruby_${name}"
-
-		PROPERTIES
-			SUFFIX ".bundle" 
-			PREFIX ""
-			COMPILE_FLAGS "-include extconf.h"
-			OUTPUT_NAME "${name}"
+	get_filename_component(EXT_SRCDIR "${ARGV1}" DIRECTORY)
+	file(RELATIVE_PATH EXT_GENDIR "${CMAKE_CURRENT_SOURCE_DIR}/ruby" "${CMAKE_CURRENT_SOURCE_DIR}/${EXT_SRCDIR}")
+	add_darling_bundle("ruby_${name}" "" ${ARGN})
+	set_target_properties("ruby_${name}" PROPERTIES
+		SUFFIX ".bundle"
+		PREFIX ""
+		OUTPUT_NAME "${name}"
 	)
-	set_property(TARGET "ruby_${name}" APPEND_STRING PROPERTY LINK_FLAGS " -Wl,-flat_namespace ")
+	target_include_directories("ruby_${name}" PRIVATE
+		"gen/${EXT_GENDIR}"
+		"ruby/${EXT_GENDIR}"
+	)
+	target_compile_definitions("ruby_${name}" PRIVATE
+		RUBY_EXTCONF_H="extconf.h"
+	)
+	target_link_options("ruby_${name}" PRIVATE
+		-Wl,-flat_namespace
+	)
 	add_dependencies("ruby_${name}" ruby)
-	target_link_libraries("ruby_${name}" system)
-
+	target_link_libraries("ruby_${name}" Ruby system)
 endfunction(add_ruby_bundle)
 
 function(add_ruby_bundle_enc name)
 	add_ruby_bundle(${name} ${ARGN})
+	target_compile_definitions("ruby_${name}" PRIVATE
+		ONIG_ENC_REGISTER=rb_enc_register
+	)
+	target_compile_options("ruby_${name}" PRIVATE
+		-fno-common
 
-	set_target_properties("ruby_${name}"
-		PROPERTIES
-			COMPILE_FLAGS "-DONIG_ENC_REGISTER=rb_enc_register -fno-common"
+		-URUBY_EXTCONF_H # we don't want this for encoding bundles and there is no `target_remove_definitions` for CMake
 	)
 endfunction(add_ruby_bundle_enc)
 
-# Encoding and transcoding bundles
+# encoding and transcoding bundles
 
 add_ruby_bundle_enc(encdb ruby/enc/encdb.c)
 add_ruby_bundle_enc(big5 ruby/enc/big5.c)
@@ -207,39 +229,98 @@ add_ruby_bundle_enc(single_byte ruby/enc/trans/single_byte.c)
 add_ruby_bundle_enc(utf8_mac ruby/enc/trans/utf8_mac.c)
 add_ruby_bundle_enc(utf_16_32 ruby/enc/trans/utf_16_32.c)
 
-
-# Other bundles
+# extension bundles
 
 add_ruby_bundle(bigdecimal ruby/ext/bigdecimal/bigdecimal.c)
+
+add_ruby_bundle(util ruby/ext/bigdecimal/util/util.c)
+
 add_ruby_bundle(continuation ruby/ext/continuation/continuation.c)
+
 add_ruby_bundle(coverage ruby/ext/coverage/coverage.c)
-add_ruby_bundle(curses ruby/ext/curses/curses.c)
-target_link_libraries(ruby_curses ncurses)
+
 add_ruby_bundle(date_core ruby/ext/date/date_core.c ruby/ext/date/date_parse.c ruby/ext/date/date_strftime.c ruby/ext/date/date_strptime.c)
+
 add_ruby_bundle(dbm ruby/ext/dbm/dbm.c)
+
 add_ruby_bundle(digest ruby/ext/digest/digest.c)
 add_ruby_bundle(bubblebabble ruby/ext/digest/bubblebabble/bubblebabble.c)
 add_ruby_bundle(md5 ruby/ext/digest/md5/md5init.c ruby/ext/digest/md5/md5cc.c)
 add_ruby_bundle(rmd160 ruby/ext/digest/rmd160/rmd160init.c ruby/ext/digest/rmd160/rmd160.c)
 add_ruby_bundle(sha1 ruby/ext/digest/sha1/sha1init.c ruby/ext/digest/sha1/sha1cc.c)
 add_ruby_bundle(sha2 ruby/ext/digest/sha2/sha2init.c ruby/ext/digest/sha2/sha2.c)
-add_ruby_bundle(dl ruby/ext/dl/cfunc.c ruby/ext/dl/cptr.c ruby/ext/dl/dl.c ruby/ext/dl/handle.c)
-add_ruby_bundle(callback ruby/ext/dl/callback/callback.c ruby/ext/dl/callback/callback-0.c ruby/ext/dl/callback/callback-1.c ruby/ext/dl/callback/callback-2.c ruby/ext/dl/callback/callback-3.c ruby/ext/dl/callback/callback-4.c ruby/ext/dl/callback/callback-5.c ruby/ext/dl/callback/callback-6.c ruby/ext/dl/callback/callback-7.c ruby/ext/dl/callback/callback-8.c)
+target_include_directories(ruby_sha1 PRIVATE
+	ruby/ext/digest
+)
+
 add_ruby_bundle(etc ruby/ext/etc/etc.c)
+
 add_ruby_bundle(fcntl ruby/ext/fcntl/fcntl.c)
+
 add_ruby_bundle(fiber ruby/ext/fiber/fiber.c)
-add_ruby_bundle(fiddle ruby/ext/fiddle/closure.c ruby/ext/fiddle/conversions.c ruby/ext/fiddle/fiddle.c ruby/ext/fiddle/function.c ruby/ext/fiddle/handle.c ruby/ext/fiddle/pointer.c)
+
+add_ruby_bundle(fiddle
+	ruby/ext/fiddle/closure.c
+	ruby/ext/fiddle/conversions.c
+	ruby/ext/fiddle/fiddle.c
+	ruby/ext/fiddle/function.c
+	ruby/ext/fiddle/handle.c
+	ruby/ext/fiddle/pointer.c
+)
 target_link_libraries(ruby_fiddle ffi)
+
 add_ruby_bundle(console ruby/ext/io/console/console.c)
 add_ruby_bundle(nonblock ruby/ext/io/nonblock/nonblock.c)
 add_ruby_bundle(wait ruby/ext/io/wait/wait.c)
+
 add_ruby_bundle(generator ruby/ext/json/generator/generator.c)
 add_ruby_bundle(parser ruby/ext/json/parser/parser.c)
-add_ruby_bundle(complex ruby/ext/mathn/complex/complex.c)
-add_ruby_bundle(rational ruby/ext/mathn/rational/rational.c)
+
 add_ruby_bundle(nkf ruby/ext/nkf/nkf.c)
-add_ruby_bundle(objspace ruby/ext/objspace/objspace.c)
+
+add_ruby_bundle(objspace ruby/ext/objspace/objspace.c ruby/ext/objspace/object_tracing.c ruby/ext/objspace/objspace_dump.c)
+
+add_ruby_bundle(openssl
+	ruby/ext/openssl/openssl_missing.c
+	ruby/ext/openssl/ossl_asn1.c
+	ruby/ext/openssl/ossl_bio.c
+	ruby/ext/openssl/ossl_bn.c
+	ruby/ext/openssl/ossl_cipher.c
+	ruby/ext/openssl/ossl_config.c
+	ruby/ext/openssl/ossl_digest.c
+	ruby/ext/openssl/ossl_engine.c
+	ruby/ext/openssl/ossl_hmac.c
+	ruby/ext/openssl/ossl_kdf.c
+	ruby/ext/openssl/ossl_ns_spki.c
+	ruby/ext/openssl/ossl_ocsp.c
+	ruby/ext/openssl/ossl_pkcs12.c
+	ruby/ext/openssl/ossl_pkcs7.c
+	ruby/ext/openssl/ossl_pkey_dh.c
+	ruby/ext/openssl/ossl_pkey_dsa.c
+	ruby/ext/openssl/ossl_pkey_ec.c
+	ruby/ext/openssl/ossl_pkey_rsa.c
+	ruby/ext/openssl/ossl_pkey.c
+	ruby/ext/openssl/ossl_rand.c
+	ruby/ext/openssl/ossl_ssl_session.c
+	ruby/ext/openssl/ossl_ssl.c
+	ruby/ext/openssl/ossl_x509.c
+	ruby/ext/openssl/ossl_x509attr.c
+	ruby/ext/openssl/ossl_x509cert.c
+	ruby/ext/openssl/ossl_x509crl.c
+	ruby/ext/openssl/ossl_x509ext.c
+	ruby/ext/openssl/ossl_x509name.c
+	ruby/ext/openssl/ossl_x509req.c
+	ruby/ext/openssl/ossl_x509revoked.c
+	ruby/ext/openssl/ossl_x509store.c
+	ruby/ext/openssl/ossl.c
+)
+target_link_libraries(ruby_openssl
+	crypto44
+	ssl46
+)
+
 add_ruby_bundle(pathname ruby/ext/pathname/pathname.c)
+
 add_ruby_bundle(psych
 	ruby/ext/psych/psych.c
 	ruby/ext/psych/psych_emitter.c
@@ -255,13 +336,23 @@ add_ruby_bundle(psych
 	ruby/ext/psych/yaml/scanner.c
 	ruby/ext/psych/yaml/writer.c
 )
-set_target_properties(ruby_psych PROPERTIES COMPILE_DEFINITIONS "HAVE_CONFIG_H")
+target_include_directories(ruby_psych PRIVATE
+	ruby/ext/psych/yaml
+)
+
 add_ruby_bundle(pty ruby/ext/pty/pty.c)
+
 add_ruby_bundle(cparse ruby/ext/racc/cparse/cparse.c)
+
+add_ruby_bundle(sizeof ruby/ext/rbconfig/sizeof/limits.c ruby/ext/rbconfig/sizeof/sizes.c)
+
 add_ruby_bundle(readline ruby/ext/readline/readline.c)
 target_link_libraries(ruby_readline edit)
+
 add_ruby_bundle(ripper ruby/ext/ripper/ripper.c)
+
 add_ruby_bundle(sdbm ruby/ext/sdbm/_sdbm.c ruby/ext/sdbm/init.c)
+
 add_ruby_bundle(socket
 	ruby/ext/socket/init.c
 	ruby/ext/socket/constants.c
@@ -278,54 +369,22 @@ add_ruby_bundle(socket
 	ruby/ext/socket/ancdata.c
 	ruby/ext/socket/raddrinfo.c
 )
+
 add_ruby_bundle(stringio ruby/ext/stringio/stringio.c)
+
 add_ruby_bundle(strscan ruby/ext/strscan/strscan.c)
+
 add_ruby_bundle(syslog ruby/ext/syslog/syslog.c)
+
 add_ruby_bundle(zlib ruby/ext/zlib/zlib.c)
 target_link_libraries(ruby_zlib z)
 
-target_include_directories(ruby_bigdecimal PRIVATE extconfs/bigdecimal)
-target_include_directories(ruby_continuation PRIVATE extconfs/continuation)
-target_include_directories(ruby_coverage PRIVATE extconfs/coverage)
-target_include_directories(ruby_curses PRIVATE extconfs/curses)
-target_include_directories(ruby_date_core PRIVATE extconfs/date)
-target_include_directories(ruby_dbm PRIVATE extconfs/dbm)
-target_include_directories(ruby_digest PRIVATE extconfs/digest ruby/ext/digest)
-target_include_directories(ruby_bubblebabble PRIVATE extconfs/digest/bubblebabble ruby/ext/digest)
-target_include_directories(ruby_md5 PRIVATE extconfs/digest/md5 ruby/ext/digest)
-target_include_directories(ruby_rmd160 PRIVATE extconfs/digest/rmd160 ruby/ext/digest)
-target_include_directories(ruby_sha1 PRIVATE extconfs/digest/sha1 ruby/ext/digest)
-target_include_directories(ruby_sha2 PRIVATE extconfs/digest/sha2 ruby/ext/digest)
-target_include_directories(ruby_dl PRIVATE extconfs/dl ruby/ext/dl)
-target_include_directories(ruby_callback PRIVATE extconfs/dl/callback ruby/ext/dl)
-target_include_directories(ruby_etc PRIVATE extconfs/etc)
-target_include_directories(ruby_fcntl PRIVATE extconfs/fcntl)
-target_include_directories(ruby_fiber PRIVATE extconfs/fiber)
-target_include_directories(ruby_fiddle PRIVATE extconfs/fiddle ruby/ext/fiddle)
-target_include_directories(ruby_console PRIVATE extconfs/io/console)
-target_include_directories(ruby_nonblock PRIVATE extconfs/io/nonblock)
-target_include_directories(ruby_wait PRIVATE extconfs/io/wait)
-target_include_directories(ruby_generator PRIVATE extconfs/json/generator)
-target_include_directories(ruby_parser PRIVATE extconfs/json/parser)
-target_include_directories(ruby_complex PRIVATE extconfs/mathn/complex)
-target_include_directories(ruby_rational PRIVATE extconfs/mathn/rational)
-target_include_directories(ruby_nkf PRIVATE extconfs/nkf)
-target_include_directories(ruby_objspace PRIVATE extconfs/objspace)
-target_include_directories(ruby_pathname PRIVATE extconfs/pathname)
-target_include_directories(ruby_psych PRIVATE extconfs/psych ruby/ext/psych ruby/ext/psych/yaml)
-target_include_directories(ruby_pty PRIVATE extconfs/pty)
-target_include_directories(ruby_cparse PRIVATE extconfs/racc/cparse)
-target_include_directories(ruby_readline PRIVATE extconfs/readline ${CMAKE_SOURCE_DIR}/src/libedit/src)
-target_include_directories(ruby_ripper PRIVATE extconfs/ripper ruby/ext/ripper)
-target_include_directories(ruby_sdbm PRIVATE extconfs/sdbm)
-target_include_directories(ruby_socket PRIVATE extconfs/socket ruby/ext/socket)
-target_include_directories(ruby_stringio PRIVATE extconfs/stringio)
-target_include_directories(ruby_strscan PRIVATE extconfs/strscan)
-target_include_directories(ruby_syslog PRIVATE extconfs/syslog)
-target_include_directories(ruby_zlib PRIVATE extconfs/zlib)
+#
+# install everything
+#
 
-set(ruby_root "libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr")
-set(ruby_bundle_root "${ruby_root}/lib/ruby/2.0.0/universal-darwin16")
+set(ruby_root "libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr")
+set(ruby_bundle_root "${ruby_root}/lib/ruby/2.6.0/universal-darwin19")
 
 install(TARGETS ruby DESTINATION ${ruby_root}/bin)
 
@@ -334,13 +393,40 @@ install(DIRECTORY Ruby.framework
 	USE_SOURCE_PERMISSIONS
 )
 
+install(
+	TARGETS
+		ruby_bigdecimal
+		ruby_continuation
+		ruby_coverage
+		ruby_date_core
+		ruby_dbm
+		ruby_digest
+		ruby_etc
+		ruby_fcntl
+		ruby_fiber
+		ruby_fiddle
+		ruby_nkf
+		ruby_objspace
+		ruby_openssl
+		ruby_pathname
+		ruby_psych
+		ruby_pty
+		ruby_readline
+		ruby_ripper
+		ruby_sdbm
+		ruby_socket
+		ruby_stringio
+		ruby_strscan
+		ruby_syslog
+		ruby_zlib
+	DESTINATION
+		${ruby_bundle_root}
+)
+
 install(TARGETS
-    ruby_bigdecimal ruby_continuation ruby_coverage ruby_curses ruby_date_core ruby_dbm ruby_digest ruby_dl ruby_etc ruby_fcntl ruby_fiber ruby_fiddle ruby_nkf
-    ruby_objspace ruby_pathname ruby_psych ruby_pty ruby_ripper ruby_sdbm ruby_socket ruby_stringio ruby_strscan ruby_syslog ruby_zlib
-    ruby_readline # ruby_openssl
+	ruby_util
 
-
-	DESTINATION ${ruby_bundle_root}
+	DESTINATION ${ruby_bundle_root}/bigdecimal
 )
 
 install(TARGETS
@@ -348,8 +434,6 @@ install(TARGETS
 
 	DESTINATION ${ruby_bundle_root}/digest
 )
-
-install(TARGETS ruby_callback DESTINATION ${ruby_bundle_root}/dl)
 
 install(TARGETS
     ruby_big5 ruby_cp949 ruby_emacs_mule ruby_encdb ruby_euc_jp ruby_euc_kr ruby_euc_tw ruby_gb2312 ruby_gb18030 ruby_gbk ruby_iso_8859_1 ruby_iso_8859_2
@@ -384,18 +468,18 @@ install(TARGETS
 )
 
 install(TARGETS
-	ruby_complex ruby_rational
-
-	DESTINATION ${ruby_bundle_root}/mathn
-)
-
-install(TARGETS
 	ruby_cparse
 
 	DESTINATION ${ruby_bundle_root}/racc
 )
 
-set(ruby_sym_root "/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr")
+install(TARGETS
+	ruby_sizeof
+
+	DESTINATION ${ruby_bundle_root}/rbconfig
+)
+
+set(ruby_sym_root "/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr")
 set(ruby_sym_dest "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/bin")
 
 InstallSymlink(${ruby_sym_root}/bin/erb ${ruby_sym_dest}/erb)
