@@ -5,6 +5,7 @@
 *.dylib
 *.bundle
 *.list
+*.a
 /gen/exe/ruby
 /gen/.ext/rdoc
 /gen/miniruby
