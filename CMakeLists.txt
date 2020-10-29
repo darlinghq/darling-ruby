@@ -397,6 +397,11 @@ install(DIRECTORY Ruby.framework
 	USE_SOURCE_PERMISSIONS
 )
 
+install(DIRECTORY Library
+	DESTINATION libexec/darling
+	USE_SOURCE_PERMISSIONS
+)
+
 install(
 	TARGETS
 		ruby_bigdecimal
