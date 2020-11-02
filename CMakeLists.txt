@@ -488,8 +488,8 @@ install(TARGETS
 	DESTINATION ${ruby_bundle_root}/rbconfig
 )
 
-InstallSymlink("../../Ruby" "${CMAKE_INSTALL_PREFIX}/darling/libexec/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/libruby.2.6.dylib")
-InstallSymlink("libruby.2.6.dylib" "${CMAKE_INSTALL_PREFIX}/darling/libexec/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/libruby.dylib")
+InstallSymlink("../../Ruby" "${CMAKE_INSTALL_PREFIX}/libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/libruby.2.6.dylib")
+InstallSymlink("libruby.2.6.dylib" "${CMAKE_INSTALL_PREFIX}/libexec/darling/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/libruby.dylib")
 
 set(ruby_sym_root "/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr")
 set(ruby_sym_dest "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/bin")
@@ -506,6 +506,6 @@ InstallSymlink(${ruby_sym_root}/bin/ruby ${ruby_sym_dest}/ruby)
 install(FILES extras/irbrc DESTINATION libexec/darling/etc)
 install(PROGRAMS extras/rails DESTINATION libexec/darling/usr/bin)
 
-InstallSymlink("../../System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/libruby.2.6.dylib" "${CMAKE_INSTALL_PREFIX}/darling/libexec/usr/lib/libruby.2.6.dylib")
-InstallSymlink("libruby.2.6.dylib" "${CMAKE_INSTALL_PREFIX}/darling/libexec/usr/lib/libruby.dylib")
-InstallSymlink("../../System/Library/Frameworks/Ruby.framework/Versions/Current/usr/lib/ruby" "${CMAKE_INSTALL_PREFIX}/darling/libexec/usr/lib/ruby")
+InstallSymlink("../../System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/libruby.2.6.dylib" "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/lib/libruby.2.6.dylib")
+InstallSymlink("libruby.2.6.dylib" "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/lib/libruby.dylib")
+InstallSymlink("../../System/Library/Frameworks/Ruby.framework/Versions/Current/usr/lib/ruby" "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/lib/ruby")
