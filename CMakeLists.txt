@@ -249,13 +249,21 @@ add_ruby_bundle(dbm ruby/ext/dbm/dbm.c)
 
 add_ruby_bundle(digest ruby/ext/digest/digest.c)
 add_ruby_bundle(bubblebabble ruby/ext/digest/bubblebabble/bubblebabble.c)
-add_ruby_bundle(md5 ruby/ext/digest/md5/md5init.c ruby/ext/digest/md5/md5cc.c)
-add_ruby_bundle(rmd160 ruby/ext/digest/rmd160/rmd160init.c ruby/ext/digest/rmd160/rmd160.c)
-add_ruby_bundle(sha1 ruby/ext/digest/sha1/sha1init.c ruby/ext/digest/sha1/sha1cc.c)
-add_ruby_bundle(sha2 ruby/ext/digest/sha2/sha2init.c ruby/ext/digest/sha2/sha2.c)
-target_include_directories(ruby_sha1 PRIVATE
-	ruby/ext/digest
-)
+
+function(add_ruby_digest_bundle name)
+	add_ruby_bundle(${name} ruby/ext/digest/${name}/${name}init.c ruby/ext/digest/${name}/${name}.c)
+	target_include_directories(ruby_${name} PRIVATE ruby/ext/digest)
+
+	# Apple's config seems to show them using CommonCrypto, but the actual bundles on macOS use LibreSSL
+	target_link_libraries(ruby_${name} ssl46 crypto44)
+	string(TOUPPER "${name}" upper_name)
+	target_compile_definitions(ruby_${name} PRIVATE ${upper_name}_USE_OPENSSL=1)
+endfunction()
+
+add_ruby_digest_bundle(md5)
+add_ruby_digest_bundle(rmd160)
+add_ruby_digest_bundle(sha1)
+add_ruby_digest_bundle(sha2)
 
 add_ruby_bundle(etc ruby/ext/etc/etc.c)
 
@@ -362,6 +370,7 @@ add_ruby_bundle(socket
 	ruby/ext/socket/constants.c
 	ruby/ext/socket/basicsocket.c
 	ruby/ext/socket/socket.c
+	ruby/ext/socket/ifaddr.c
 	ruby/ext/socket/ipsocket.c
 	ruby/ext/socket/tcpsocket.c
 	ruby/ext/socket/tcpserver.c
