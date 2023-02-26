@@ -419,7 +419,7 @@ set(ruby_bundle_root "${ruby_root}/lib/ruby/2.6.0/universal-darwin19")
 
 install(TARGETS ruby DESTINATION ${ruby_root}/bin)
 
-install(DIRECTORY Ruby.framework
+install(DIRECTORY darling/framework/Ruby.framework
 	DESTINATION libexec/darling/System/Library/Frameworks
 	USE_SOURCE_PERMISSIONS
 )
