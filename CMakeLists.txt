@@ -1,5 +1,23 @@
 project(ruby)
 
+remove_sdk_framework(Ruby)
+
+generate_sdk_framework(Ruby
+    VERSION "2.6"
+    HEADER "darling/include/ruby"
+)
+
+if (REGENERATE_SDK)
+	set(preframework_path "")
+	get_path_preframework(preframework_path)
+
+	set(ruby_absolute_current_path "${preframework_path}/Ruby.framework/Versions/Current")
+	file(RELATIVE_PATH ruby_relative_usr_path "${ruby_absolute_current_path}" "${CMAKE_CURRENT_SOURCE_DIR}/darling/framework_sdk/Ruby.framework/Versions/2.6/usr")
+
+	create_symlink("${ruby_relative_usr_path}" "${ruby_absolute_current_path}/usr")
+endif (REGENERATE_SDK)
+
+
 include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/gen
 	${CMAKE_CURRENT_SOURCE_DIR}/gen/.ext/include/universal-darwin19
@@ -401,7 +419,7 @@ set(ruby_bundle_root "${ruby_root}/lib/ruby/2.6.0/universal-darwin19")
 
 install(TARGETS ruby DESTINATION ${ruby_root}/bin)
 
-install(DIRECTORY Ruby.framework
+install(DIRECTORY darling/framework/Ruby.framework
 	DESTINATION libexec/darling/System/Library/Frameworks
 	USE_SOURCE_PERMISSIONS
 )
