@@ -1,1 +1,0 @@
-../usr/include/ruby-2.6.0/ruby.h
