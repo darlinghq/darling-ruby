@@ -530,7 +530,7 @@ InstallSymlink(${ruby_sym_root}/bin/ri ${ruby_sym_dest}/ri)
 InstallSymlink(${ruby_sym_root}/bin/testrb ${ruby_sym_dest}/testrb)
 InstallSymlink(${ruby_sym_root}/bin/ruby ${ruby_sym_dest}/ruby)
 
-install(FILES extras/irbrc DESTINATION libexec/darling/etc)
+install(FILES extras/irbrc DESTINATION libexec/darling/private/etc)
 install(PROGRAMS extras/rails DESTINATION libexec/darling/usr/bin)
 
 InstallSymlink("../../System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/libruby.2.6.dylib" "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/lib/libruby.2.6.dylib")
