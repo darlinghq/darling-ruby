@@ -29,6 +29,7 @@ include_directories(
 add_compile_options(
 	-w
 	-nostdinc
+	-Wno-error=incompatible-function-pointer-types
 )
 
 add_compile_definitions(
