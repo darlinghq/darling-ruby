@@ -30,6 +30,7 @@ add_compile_options(
 	-w
 	-nostdinc
 	-Wno-error=incompatible-function-pointer-types
+	-U_POSIX_C_SOURCE
 )
 
 add_compile_definitions(
