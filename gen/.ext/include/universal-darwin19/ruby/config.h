@@ -414,6 +414,9 @@
 #if defined __i386__ &&! defined RUBY_PLATFORM_CPU
 #define RUBY_PLATFORM_CPU "i386"
 #endif /* defined __i386__ &&! defined RUBY_PLATFORM_CPU */
+#if (defined __aarch64__ || defined __arm64__) &&! defined RUBY_PLATFORM_CPU
+#define RUBY_PLATFORM_CPU "arm64"
+#endif /* defined __aarch64__ &&! defined RUBY_PLATFORM_CPU */
 #define RUBY_PLATFORM_OS "darwin19"
 #define RUBY_ARCH "universal-"RUBY_PLATFORM_OS
 #define RUBY_PLATFORM "universal."RUBY_PLATFORM_CPU"-"RUBY_PLATFORM_OS
