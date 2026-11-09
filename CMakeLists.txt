@@ -529,7 +529,6 @@ InstallSymlink(${ruby_sym_root}/bin/irb ${ruby_sym_dest}/irb)
 InstallSymlink(${ruby_sym_root}/bin/rake ${ruby_sym_dest}/rake)
 InstallSymlink(${ruby_sym_root}/bin/rdoc ${ruby_sym_dest}/rdoc)
 InstallSymlink(${ruby_sym_root}/bin/ri ${ruby_sym_dest}/ri)
-InstallSymlink(${ruby_sym_root}/bin/testrb ${ruby_sym_dest}/testrb)
 InstallSymlink(${ruby_sym_root}/bin/ruby ${ruby_sym_dest}/ruby)
 
 install(FILES extras/irbrc DESTINATION libexec/darling/private/etc)
