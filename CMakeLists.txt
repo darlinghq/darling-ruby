@@ -275,7 +275,7 @@ function(add_ruby_digest_bundle name)
 	target_include_directories(ruby_${name} PRIVATE ruby/ext/digest)
 
 	# Apple's config seems to show them using CommonCrypto, but the actual bundles on macOS use LibreSSL
-	target_link_libraries(ruby_${name} ssl46 crypto44)
+	target_link_libraries(ruby_${name} ssl48 crypto46)
 	string(TOUPPER "${name}" upper_name)
 	target_compile_definitions(ruby_${name} PRIVATE ${upper_name}_USE_OPENSSL=1)
 endfunction()
@@ -347,8 +347,8 @@ add_ruby_bundle(openssl
 	ruby/ext/openssl/ossl.c
 )
 target_link_libraries(ruby_openssl
-	crypto44
-	ssl46
+	crypto46
+	ssl48
 )
 
 add_ruby_bundle(pathname ruby/ext/pathname/pathname.c)
